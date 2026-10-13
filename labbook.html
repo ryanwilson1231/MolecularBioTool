@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BetterBench</title>
+<!--
+  BetterBench — molecular biology workspace prototype.
+  Double-click to run in your browser. Local data via localStorage.
+  Structure (AlphaFold) feature makes web requests; if it fails on a
+  double-clicked file, serve with: python -m http.server
+-->
+<script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+<style>
+  :root{--bg:#f5f7fa;--panel:#fff;--ink:#1c2733;--muted:#6b7a8d;--line:#e1e7ee;--accent:#2f6fed;--accent-soft:#eaf1ff;--red:#d4504a;--sel:#ffe680;--green:#2e9e6b;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:14px 22px;display:flex;align-items:center;gap:12px}
+  header h1{font-size:18px;margin:0}
+  header .tag{font-size:12px;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:20px}
+  main{padding:22px;max-width:1080px;margin:0 auto}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:18px}
+  h2{font-size:15px;margin:0 0 12px}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  input,textarea,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;font-family:inherit;background:#fff}
+  textarea{resize:vertical}
+  .row{display:flex;gap:12px}.row>*{flex:1}
+  button.primary{background:var(--accent);color:#fff;border:none;padding:9px 16px;border-radius:7px;cursor:pointer;font-size:14px}
+  button.ghost{background:none;border:1px solid var(--line);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--muted)}
+  button.danger{color:var(--red);border-color:#f2c9c6}
+  .muted{color:var(--muted);font-size:13px}
+  .note{background:#fffbe6;border:1px solid #f0e3a8;border-radius:7px;padding:10px 12px;font-size:12.5px;color:#7a6a1f;margin-top:10px}
+  .note code{background:#fdf3c0;padding:1px 5px;border-radius:4px}
+  /* gallery */
+  .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;cursor:pointer;transition:.12s;min-height:140px;display:flex;flex-direction:column;justify-content:space-between}
+  .card:hover{border-color:var(--accent);box-shadow:0 2px 12px rgba(47,111,237,.10);transform:translateY(-1px)}
+  .card .nm{font-weight:600;font-size:14px;margin-bottom:6px;word-break:break-word}
+  .card .sub{font-size:12px;color:var(--muted)}
+  .card.new{align-items:center;justify-content:center;color:var(--accent);border-style:dashed;font-size:14px;text-align:center}
+  .card.new .plus{font-size:34px;line-height:1;margin-bottom:6px}
+  /* 3-column detail */
+  .grid3{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+  .col-left{flex:0 0 220px}
+  .col-mid{flex:1 1 380px;min-width:300px;text-align:center}
+  .col-right{flex:0 0 240px}
+  .sidecard{background:#fafbfd;border:1px solid var(--line);border-radius:8px;padding:14px;font-size:13px}
+  .comp{display:flex;align-items:center;gap:8px;padding:6px 5px;border-radius:5px;cursor:pointer;font-size:12px}
+  .comp:hover{background:var(--accent-soft)}
+  .comp-sw{width:13px;height:13px;border-radius:3px;flex:0 0 auto;border:1px solid rgba(0,0,0,.1)}
+  .comp-nm{flex:1;word-break:break-word}
+  .comp-pos{color:var(--muted);flex:0 0 auto}
+  .comp-x{border:none;background:none;color:var(--red);cursor:pointer;font-size:12px;padding:0 2px}
+  /* sequence views */
+  .seqwrap{border:1px solid var(--line);border-radius:7px;padding:10px;background:#fafbfd;max-height:320px;overflow:auto;text-align:left}
+  .seqline{display:flex;gap:12px;line-height:1.7}
+  .pos{color:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;white-space:pre;user-select:none}
+  .bases{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;white-space:pre}
+  .b{cursor:pointer}.b.sel{background:var(--sel);box-shadow:inset 0 -2px 0 #e0a800}.b.prev{background:#fff0b3}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
+  .stat{display:inline-block;margin-right:16px;font-size:13px}.stat b{color:var(--accent)}
+  .seqbox{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;word-break:break-all;line-height:1.55;background:#fafbfd;padding:12px;border-radius:7px;border:1px solid var(--line)}
+  .toggle{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .toggle button{border:none;background:#fff;padding:7px 14px;cursor:pointer;font-size:13px;color:var(--muted)}
+  .toggle button.on{background:var(--accent);color:#fff}
+  .lblrow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .menuitem{padding:8px 12px;font-size:13px;border-radius:5px;cursor:pointer;color:var(--ink)}
+  .menuitem:hover{background:var(--accent-soft)}.menuitem.danger{color:var(--red)}.menuitem.muted{color:var(--muted)}
+  .sidebar{position:fixed;right:0;top:0;height:100%;width:300px;background:#fff;border-left:1px solid var(--line);box-shadow:-6px 0 24px rgba(0,0,0,.10);padding:20px;z-index:1100;overflow:auto}
+  .swatch{display:inline-block;width:20px;height:20px;border-radius:5px;margin-right:6px;cursor:pointer;border:2px solid transparent;vertical-align:middle}
+  .swatch.on{border-color:var(--ink)}
+  svg text{font-family:-apple-system,Segoe UI,Roboto,sans-serif}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+  th,td{text-align:left;padding:5px 7px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}
+</style>
+</head>
+<body>
+<header><h1>🧬 BetterBench</h1><span class="tag">molecular biology workspace · saved locally</span><button class="ghost" style="margin-left:auto" onclick="toggleTools()">🧪 Tools</button></header>
+<main id="main"></main>
+
+<script>
+/* ===================== STATE ===================== */
+const STORE_KEY="minibench.v2";
+let state=load();
+function load(){let s;try{s=JSON.parse(localStorage.getItem(STORE_KEY));}catch(e){}if(!s)s=seed();return normalize(s);}
+function save(){localStorage.setItem(STORE_KEY,JSON.stringify(state));}
+function normalize(s){
+  s.plasmids=s.plasmids||[]; s.pView=s.pView||"home"; s.creating=false;
+  if(s.curPlasmid===undefined)s.curPlasmid=null;
+  s.plasmids.forEach(p=>{p.type=p.type||"dna";p.topology=p.topology||"circular";p.ann=p.ann||[];p.uniprot=p.uniprot||"";});
+  return s;
+}
+function seed(){
+  const ex="ATGGCCGAATTCGGATCCAAGCTTATGAAAGCTCTGATTGTGCTGGCCTACAGCGGCGGCCTGGAAGTGCTGTTTCAGGGACCCAGCGGCGGCAGCGGCGCCGCTGCAGGTAGCGGTAGCGGTAGCGTCGACGAGCTCACTAGTGGTACCCTCGAGTAA";
+  return {pView:"home",creating:false,curPlasmid:null,
+    plasmids:[{id:id(),name:"Example plasmid",type:"dna",topology:"circular",uniprot:"",seq:ex,
+      ann:[{id:id(),start:9,end:14,label:"EcoRI region",color:"#cfe8ff"}]}]};
+}
+function id(){return Math.random().toString(36).slice(2,9);}
+
+/* ===================== BIOLOGY ===================== */
+function cleanDNA(s){return (s||"").toUpperCase().replace(/[^ACGT]/g,"");}
+function cleanAA(s){return (s||"").toUpperCase().replace(/[^ACDEFGHIKLMNPQRSTVWYX*]/g,"");}
+function seqOf(p){return p.type==="protein"?cleanAA(p.seq):cleanDNA(p.seq);}
+function revComp(s){const m={A:"T",T:"A",C:"G",G:"C"};return s.split("").reverse().map(b=>m[b]||"").join("");}
+const CODONS={TTT:"F",TTC:"F",TTA:"L",TTG:"L",CTT:"L",CTC:"L",CTA:"L",CTG:"L",ATT:"I",ATC:"I",ATA:"I",ATG:"M",GTT:"V",GTC:"V",GTA:"V",GTG:"V",TCT:"S",TCC:"S",TCA:"S",TCG:"S",CCT:"P",CCC:"P",CCA:"P",CCG:"P",ACT:"T",ACC:"T",ACA:"T",ACG:"T",GCT:"A",GCC:"A",GCA:"A",GCG:"A",TAT:"Y",TAC:"Y",TAA:"*",TAG:"*",CAT:"H",CAC:"H",CAA:"Q",CAG:"Q",AAT:"N",AAC:"N",AAA:"K",AAG:"K",GAT:"D",GAC:"D",GAA:"E",GAG:"E",TGT:"C",TGC:"C",TGA:"*",TGG:"W",CGT:"R",CGC:"R",CGA:"R",CGG:"R",AGT:"S",AGC:"S",AGA:"R",AGG:"R",GGT:"G",GGC:"G",GGA:"G",GGG:"G"};
+function translate(s){let p="";for(let i=0;i+3<=s.length;i+=3)p+=CODONS[s.substr(i,3)]||"X";return p;}
+function tm(s){const n=s.length;if(!n)return null;const gc=(s.match(/[GC]/g)||[]).length;if(n<14)return 2*(n-gc)+4*gc;return Math.round((64.9+41*(gc-16.4)/n)*10)/10;}
+const AAW={A:71.08,R:156.19,N:114.10,D:115.09,C:103.14,E:129.12,Q:128.13,G:57.05,H:137.14,I:113.16,L:113.16,K:128.17,M:131.19,F:147.18,P:97.12,S:87.08,T:101.10,W:186.21,Y:163.18,V:99.13,X:110,"*":0};
+function proteinMW(s){let m=0;for(const a of s)m+=AAW[a]||0;return s.length?Math.round((m+18.02)/100)/10:0;}
+const ENZYMES={EcoRI:"GAATTC",BamHI:"GGATCC",HindIII:"AAGCTT",XhoI:"CTCGAG",NotI:"GCGGCCGC",NdeI:"CATATG",XbaI:"TCTAGA",SalI:"GTCGAC",PstI:"CTGCAG",SacI:"GAGCTC",KpnI:"GGTACC",SmaI:"CCCGGG",NcoI:"CCATGG",BglII:"AGATCT",SpeI:"ACTAGT",EcoRV:"GATATC",ApaI:"GGGCCC",AflII:"CTTAAG",AscI:"GGCGCGCC",PacI:"TTAATTAA",SphI:"GCATGC",MluI:"ACGCGT"};
+function enzymesIn(sub,offset){const hits=[];for(const name in ENZYMES){const site=ENZYMES[name];let i=sub.indexOf(site),pos=[];while(i!==-1){pos.push(offset+i+1);i=sub.indexOf(site,i+1);}if(pos.length)hits.push({name,pos});}return hits;}
+const POLY=[{name:"Taq",sPerKb:60,fid:"standard"},{name:"Pfu",sPerKb:120,fid:"high-fidelity"},{name:"Phusion",sPerKb:30,fid:"high-fidelity"},{name:"Q5",sPerKb:25,fid:"high-fidelity"},{name:"KOD",sPerKb:15,fid:"high-fidelity"}];
+function fmtTime(sec){sec=Math.round(sec);const m=Math.floor(sec/60),s=sec%60;return m?`${m}m ${s}s`:`${s}s`;}
+function longestORF(seq){let best={len:0,prot:""};[["+",seq],["-",revComp(seq)]].forEach(([st,ss])=>{for(let f=0;f<3;f++){let i=f;while(i+3<=ss.length){if(ss.substr(i,3)==="ATG"){let j=i,prot="";while(j+3<=ss.length){const aa=CODONS[ss.substr(j,3)]||"X";if(aa==="*")break;prot+=aa;j+=3;}if(prot.length>best.len)best={len:prot.length,prot};i=j+3;}else i+=3;}}});return best;}
+/* feature library — fixed DNA sequences relevant to molecular biology workflows */
+const FEATURES=[
+ {name:"T7 promoter",cat:"promoter",seqs:["TAATACGACTCACTATAG"]},
+ {name:"T3 promoter",cat:"promoter",seqs:["AATTAACCCTCACTAAAG"]},
+ {name:"SP6 promoter",cat:"promoter",seqs:["ATTTAGGTGACACTATAG"]},
+ {name:"T7 terminator",cat:"promoter",seqs:["CTAGCATAACCCCTTGGGGCCTCTAAACGGGTCTTGAGGGGTTTTTTG"]},
+ {name:"lac operator",cat:"promoter",seqs:["AATTGTGAGCGGATAACAATT"]},
+ {name:"tet operator (tetO)",cat:"promoter",seqs:["TCCCTATCAGTGATAGAGA"]},
+ {name:"Kozak",cat:"promoter",seqs:["GCCACCATGG","GCCGCCATGG"]},
+ {name:"loxP",cat:"element",seqs:["ATAACTTCGTATAATGTATGCTATACGAAGTTAT"]},
+ {name:"FRT",cat:"element",seqs:["GAAGTTCCTATTCTCTAGAAAGTATAGGAACTTC"]},
+ {name:"attB1 (Gateway)",cat:"element",seqs:["ACAAGTTTGTACAAAAAAGCAGGCT"]},
+ {name:"attB2 (Gateway)",cat:"element",seqs:["ACCACTTTGTACAAGAAAGCTGGGT"]},
+ {name:"FLAG tag",cat:"element",seqs:["GACTACAAGGACGACGATGACAAG"]},
+ {name:"HA tag",cat:"element",seqs:["TACCCATACGATGTTCCAGATTACGCT"]},
+ {name:"Myc tag",cat:"element",seqs:["GAACAAAAACTCATCTCAGAAGAGGATCTG"]},
+ {name:"Strep-tag II",cat:"element",seqs:["TGGAGCCACCCGCAGTTCGAAAAA"]},
+];
+function findMotifs(seq,name,variants){const out=[];variants.forEach(v=>{[["+",seq],["-",revComp(seq)]].forEach(([strand,s])=>{let i=s.indexOf(v);
+  while(i!==-1){let start,end;if(strand==="+"){start=i;end=i+v.length-1;}else{end=seq.length-1-i;start=seq.length-i-v.length;}
+    if(!out.some(o=>o.start===start))out.push({name,start,end});i=s.indexOf(v,i+1);}});});return out;}
+/* nearest-neighbor Tm (SantaLucia 1998 unified params + salt correction) */
+const NN={AA:[-7.9,-22.2],TT:[-7.9,-22.2],AT:[-7.2,-20.4],TA:[-7.2,-21.3],CA:[-8.5,-22.7],TG:[-8.5,-22.7],GT:[-8.4,-22.4],AC:[-8.4,-22.4],CT:[-7.8,-21.0],AG:[-7.8,-21.0],GA:[-8.2,-22.2],TC:[-8.2,-22.2],CG:[-10.6,-27.2],GC:[-9.8,-24.4],GG:[-8.0,-19.9],CC:[-8.0,-19.9]};
+function tmNN(seq,Ct,Na){seq=cleanDNA(seq);if(seq.length<2)return null;Ct=Ct||0.25e-6;Na=Na||0.05;let dH=0,dS=0;
+  [seq[0],seq[seq.length-1]].forEach(e=>{if(e==="G"||e==="C"){dH+=0.1;dS+=-2.8;}else{dH+=2.3;dS+=4.1;}});
+  for(let i=0;i<seq.length-1;i++){const nn=NN[seq.substr(i,2)];if(nn){dH+=nn[0];dS+=nn[1];}}
+  const R=1.987,dSs=dS+0.368*(seq.length-1)*Math.log(Na);
+  return Math.round(((dH*1000)/(dSs+R*Math.log(Ct/4))-273.15)*10)/10;}
+
+/* ===================== ROUTER / UI STATE ===================== */
+let sel={start:null,end:null}, viewMode="circular", labelColor="#cfe8ff";
+let showMenu=false, menuPos={x:0,y:0}, copySub=false, showSidebar=false, sidebarRegion=null, labelDraft="", hoverIdx=null, showDetails=false, showIdentified=false, lastIdentified=[];
+const PALETTE=["#cfe8ff","#ffd9c2","#d6f5d6","#f3d6f5","#fff2b3","#d6f0f5","#ffc9d6","#d9d2ff","#c2f0e6","#ffe0b3"];
+let appView="plasmids";
+function curP(){return state.plasmids.find(p=>p.id===state.curPlasmid)||null;}
+function render(){const m=document.getElementById("main");if(appView==="tools"){m.innerHTML=viewTools();return;}
+  m.innerHTML=state.creating?viewCreate():(state.pView==="detail"&&curP())?viewDetail():viewGallery();}
+function toggleTools(){appView=appView==="tools"?"plasmids":"tools";render();}
+
+/* ---- gallery ---- */
+function viewGallery(){
+  const cards=state.plasmids.map(p=>{const len=seqOf(p).length,unit=p.type==="protein"?"aa":"bp";
+    return `<div class="card" onclick="openPlasmid('${p.id}')"><div><div class="nm">${esc(p.name)}</div>
+      <div class="sub">${p.type==="protein"?"Protein":"DNA · "+p.topology}</div></div>
+      <div class="sub">${len} ${unit} · ${(p.ann||[]).length} components</div></div>`;}).join("");
+  return `<div class="panel"><h2>Your plasmids &amp; sequences</h2><div class="gallery">
+    <div class="card new" onclick="startCreate()"><div class="plus">＋</div>New plasmid</div>${cards}</div></div>`;
+}
+function openPlasmid(pid){state.curPlasmid=pid;state.pView="detail";const p=curP();viewMode=p.type==="protein"?"linear":"circular";clearSel();showDetails=false;save();render();}
+function goHome(){state.pView="home";state.creating=false;clearSel();save();render();}
+
+/* ---- create ---- */
+let createType="dna";
+function startCreate(){state.creating=true;createType="dna";render();}
+function setCreateType(t){createType=t;render();}
+function viewCreate(){
+  return `<div class="panel"><h2>New plasmid / sequence</h2>
+    <label>Name</label><input id="cr-name" placeholder="pET-LRRC8C">
+    <label>Sequence type</label>
+    <div class="toggle"><button class="${createType==='dna'?'on':''}" onclick="setCreateType('dna')">DNA</button>
+      <button class="${createType==='protein'?'on':''}" onclick="setCreateType('protein')">Amino acid</button></div>
+    ${createType==='dna'?`<label>Topology</label><select id="cr-topo"><option value="circular">Circular (plasmid)</option><option value="linear">Linear</option></select>`:""}
+    <label>Paste sequence</label><textarea id="cr-seq" rows="5" placeholder="${createType==='dna'?'ATGC...':'MKALIVL...'}"></textarea>
+    <label>…or upload a file (.txt / .fasta / .seq — FASTA header auto-stripped)</label>
+    <input type="file" accept=".txt,.fasta,.fa,.seq,text/plain" onchange="loadCreateFile(this)">
+    <div style="margin-top:14px"><button class="primary" onclick="doCreate()">Create</button>
+      <button class="ghost" style="margin-left:8px" onclick="goHome()">Cancel</button></div></div>`;
+}
+function loadCreateFile(input){const f=input.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>{let txt=r.result;const lines=txt.split(/\r?\n/);let name=f.name.replace(/\.[^.]+$/,"");
+    if(lines[0]&&lines[0].startsWith(">")){name=lines[0].slice(1).trim()||name;txt=lines.slice(1).join("");}
+    const ta=document.getElementById("cr-seq");if(ta)ta.value=txt;const nm=document.getElementById("cr-name");if(nm&&!nm.value)nm.value=name;};
+  r.readAsText(f);}
+function doCreate(){const name=val("cr-name").trim()||("sequence_"+(state.plasmids.length+1));
+  const seq=createType==="protein"?cleanAA(val("cr-seq")):cleanDNA(val("cr-seq"));
+  if(!seq){alert("No valid "+(createType==="protein"?"amino acid":"DNA")+" sequence found.");return;}
+  const topo=createType==="dna"?(val("cr-topo")||"circular"):"linear";
+  const np={id:id(),name,type:createType,topology:topo,uniprot:"",seq,ann:[]};
+  state.plasmids.push(np);state.curPlasmid=np.id;state.creating=false;state.pView="detail";viewMode=createType==="protein"?"linear":"circular";clearSel();showDetails=false;save();render();}
+
+/* ---- detail (3 columns: components | map | details) ---- */
+function viewDetail(){
+  const p=curP();const seq=seqOf(p);const unit=p.type==="protein"?"aa":"bp";const canCircle=p.type==="dna";
+  const toggle=canCircle?`<div class="toggle"><button class="${viewMode==='circular'?'on':''}" onclick="setView('circular')">Circular</button>
+    <button class="${viewMode==='linear'?'on':''}" onclick="setView('linear')">Linear</button></div>`:"";
+  const copyWhole=p.type==="dna"
+    ?`<button class="ghost" onclick="copySeq('dna',this)">Copy DNA</button> <button class="ghost" onclick="copySeq('prot',this)">Copy protein</button>`
+    :`<button class="ghost" onclick="copySeq('prot',this)">Copy sequence</button>`;
+  const instr=canCircle&&viewMode==='circular'?'Click two points on the ring to select a region.':'Click a '+(p.type==="protein"?'residue':'base')+' to set start, then another for the end.';
+  return `<div class="panel">
+    <div class="toolbar" style="justify-content:space-between">
+      <div><button class="ghost" onclick="goHome()">‹ All plasmids</button>
+        <b style="margin-left:10px">${esc(p.name)}</b>
+        <span class="muted"> · ${seq.length} ${unit} · ${p.type==="protein"?"protein":"DNA "+p.topology}</span></div>
+      <div>${copyWhole} ${toggle}</div></div>
+    <div class="toolbar"><span class="stat" id="sel-info">${selInfo(seq)}</span><button class="ghost" onclick="clearSel();render()">Clear</button></div>
+    <div class="grid3">
+      <div class="col-left">${componentsPanel(p)}</div>
+      <div class="col-mid">
+        <label>${instr}</label>
+        ${canCircle&&viewMode==='circular'?renderCircular(seq,p):`<div class="seqwrap" id="seqwrap" onmouseleave="clearHover()">${renderLinear(seq,p)}</div>`}
+      </div>
+      <div class="col-right">${detailsPanel(p,seq)}</div>
+    </div>
+  </div>
+  <div class="panel"><h2>Structure (AlphaFold)</h2>
+    <label>UniProt ID or protein name</label>
+    <div class="row"><input id="uni-q" value="${esc(p.uniprot||'')}" placeholder="e.g. Q80WG5  or  LRRC8A mouse">
+      <button class="primary" style="flex:0 0 auto" onclick="loadStructure()">Load structure</button></div>
+    <div id="struct-status" class="muted" style="margin-top:8px"></div>
+    <div id="viewer3d" style="height:340px;position:relative;margin-top:10px;border:1px solid var(--line);border-radius:8px;background:#fff"></div>
+    <div class="note">Shows the existing AlphaFold model (free, no key). If it errors with “failed to fetch”, serve the page with <code>python -m http.server</code> and open <code>localhost:8000/labbook.html</code>.</div>
+  </div>
+  ${menuHTML()}${sidebarHTML()}${identifiedModal(p)}`;
+}
+function setView(v){viewMode=v;render();}
+function selInfo(seq){if(sel.start===null)return'<span class="muted">Click to set a start point.</span>';if(sel.end===null)return`Start set at <b>${sel.start+1}</b> — hover to preview, click again to set the end.`;return`Selected <b>${sel.start+1}–${sel.end+1}</b> · ${sel.end-sel.start+1} ${curP().type==="protein"?"aa":"bp"}`;}
+
+/* left: components list (color-coordinated with the circle) */
+function componentsPanel(p){
+  const items=(p.ann||[]).map(a=>`<div class="comp" onclick="highlightComponent('${a.id}')">
+      <span class="comp-sw" style="background:${a.color}"></span>
+      <span class="comp-nm">${esc(a.label)}</span>
+      <span class="comp-pos">${a.start+1}–${a.end+1}</span>
+      <button class="comp-x" onclick="event.stopPropagation();delAnn('${a.id}')">✕</button></div>`).join("")
+    ||'<div class="muted" style="font-size:12px">No components yet. Highlight a region to label one, or auto-detect.</div>';
+  return `<div class="sidecard">
+    <div class="lblrow"><h2 style="margin:0">Components</h2></div>
+    ${p.type==="dna"?`<button class="ghost" style="margin:8px 0;width:100%" onclick="openIdentified()">🔍 View identified</button>`:""}
+    ${items}</div>`;
+}
+function highlightComponent(aid){const p=curP();const a=p.ann.find(x=>x.id===aid);if(!a)return;sel={start:a.start,end:a.end};showMenu=false;showDetails=true;render();}
+function openIdentified(){const p=curP();if(p.type!=="dna"){alert("Feature detection is for DNA.");return;}showIdentified=true;render();}
+/* detection helpers (return [{name,start,end}]) */
+function detectPromoters(seq){let out=[];FEATURES.filter(f=>f.cat==="promoter").forEach(f=>out=out.concat(findMotifs(seq,f.name,f.seqs)));return out;}
+function detectRestrictionList(seq){const out=[];enzymesIn(seq,0).forEach(e=>{e.pos.forEach(pos=>{out.push({name:e.name+" site",start:pos-1,end:pos-1+ENZYMES[e.name].length-1});});});return out;}
+function detectKnownGenes(seq){let out=[];FEATURES.filter(f=>f.cat==="element").forEach(f=>out=out.concat(findMotifs(seq,f.name,f.seqs)));
+  // poly-His tag (CAT/CAC repeated >=6)
+  [["+",seq],["-",revComp(seq)]].forEach(([strand,s])=>{const re=/(?:CAT|CAC){6,}/g;let m;while((m=re.exec(s))){let start,end;if(strand==="+"){start=m.index;end=m.index+m[0].length-1;}else{end=seq.length-1-m.index;start=seq.length-m.index-m[0].length;}out.push({name:"His-tag (polyHis)",start,end});}});
+  // cross-reference labels from your OTHER plasmids (your own database)
+  state.plasmids.forEach(op=>{if(op.id===state.curPlasmid)return;const os=seqOf(op);(op.ann||[]).forEach(a=>{const sub=os.slice(a.start,a.end+1);if(sub.length<15)return;out=out.concat(findMotifs(seq,a.label,[sub]));});});
+  return out;}
+function identifiedModal(p){
+  if(!showIdentified||!p)return"";
+  const seq=seqOf(p);lastIdentified=[];
+  const col=(title,items)=>{const body=items.length?items.map(it=>{const idx=lastIdentified.push(it)-1;const added=p.ann.some(a=>a.start===it.start&&a.end===it.end&&a.label===it.name);
+    return `<div class="comp" style="cursor:default"><span class="comp-nm">${esc(it.name)}</span><span class="comp-pos">${it.start+1}–${it.end+1}</span>
+      <button class="comp-x" style="font-size:16px;color:${added?'var(--green)':'var(--accent)'}" title="${added?'added':'add to plasmid'}" onclick="addIdentifiedByIndex(${idx})">${added?'✓':'＋'}</button></div>`;}).join("")
+    :'<div class="muted" style="font-size:12px">None found.</div>';
+    return `<div style="flex:1;min-width:170px"><h3 style="font-size:13px;margin:0 0 8px">${title} (${items.length})</h3>${body}</div>`;};
+  const proms=detectPromoters(seq),res=detectRestrictionList(seq),genes=detectKnownGenes(seq);
+  return `<div onclick="if(event.target===this){showIdentified=false;render()}" style="position:fixed;inset:0;background:rgba(20,30,45,.35);z-index:1200;display:flex;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:22px;max-width:740px;width:92%;max-height:82vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.25)">
+      <div class="lblrow"><h2 style="margin:0">Identified features</h2><button class="ghost" onclick="showIdentified=false;render()">Close</button></div>
+      <p class="muted" style="font-size:12px;margin:8px 0 14px">Click ＋ to label a feature on your plasmid. “Known genes” includes a popular subset plus matches to components you’ve labeled on your other plasmids.</p>
+      <div style="display:flex;gap:20px;flex-wrap:wrap">${col("Promoters",proms)}${col("Restriction sites",res)}${col("Known genes",genes)}</div>
+    </div></div>`;
+}
+function addIdentifiedByIndex(i){const it=lastIdentified[i];const p=curP();if(!it||!p)return;
+  if(p.ann.some(a=>a.start===it.start&&a.end===it.end&&a.label===it.name))return;
+  p.ann.push({id:id(),start:it.start,end:it.end,label:it.name,color:PALETTE[p.ann.length%PALETTE.length]});save();render();}
+
+/* right: details on demand */
+function detailsPanel(p,seq){
+  if(!showDetails||sel.start===null||sel.end===null)
+    return `<div class="sidecard"><span class="muted" style="font-size:12px">Highlight a region, then choose “Details” from the menu to see stats here.</span></div>`;
+  const sub=seq.slice(sel.start,sel.end+1),n=sub.length;
+  const close=`<button class="comp-x" onclick="showDetails=false;render()">✕</button>`;
+  if(p.type==="protein")return `<div class="sidecard"><div class="lblrow"><h2 style="margin:0">Details</h2>${close}</div>
+    <div style="margin-top:8px"><span class="stat">Length: <b>${n}</b> aa</span><span class="stat">MW: <b>${proteinMW(sub)}</b> kDa</span></div></div>`;
+  const gc=((sub.match(/[GC]/g)||[]).length/n*100).toFixed(1);
+  const whole=enzymesIn(seq,0);const wholeCount={};whole.forEach(w=>wholeCount[w.name]=w.pos.length);
+  const enz=enzymesIn(sub,sel.start);
+  const enzHTML=enz.length?enz.map(e=>{const tot=wholeCount[e.name]||e.pos.length;const uniq=tot===1;
+    return `<div style="margin:3px 0"><b>${e.name}</b> @ ${e.pos.join(", ")} · <span style="color:${uniq?'var(--green)':'var(--muted)'}">${uniq?'unique':tot+'×'}</span></div>`;}).join(""):'<span class="muted">No sites here.</span>';
+  const rows=POLY.map(e=>`<tr><td>${e.name}</td><td>${e.fid}</td><td><b>${fmtTime(e.sPerKb*n/1000)}</b></td></tr>`).join("");
+  return `<div class="sidecard"><div class="lblrow"><h2 style="margin:0">Details</h2>${close}</div>
+    <div style="margin-top:8px"><span class="stat">${n} bp</span><span class="stat">GC <b>${gc}%</b></span><span class="stat">Tm <b>${tm(sub)}°C</b></span></div>
+    <label>Restriction sites here</label><div>${enzHTML}</div>
+    <label>PCR extension time</label><table><thead><tr><th>Pol</th><th>Type</th><th>Time</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* linear + circular renderers */
+function renderLinear(seq,p){const per=60,ann=p.ann||[];
+  const bg=i=>{for(const a of ann)if(i>=a.start&&i<=a.end)return a.color;return null;};
+  const inSel=i=>sel.start===null?false:sel.end===null?i===sel.start:(i>=sel.start&&i<=sel.end);
+  let h="";for(let line=0;line*per<seq.length;line++){const sp=line*per;
+    h+=`<div class="seqline"><span class="pos">${String(sp+1).padStart(6)}</span><span class="bases">`;
+    for(let j=sp;j<Math.min(sp+per,seq.length);j++){const c=bg(j);const cls="b"+(inSel(j)?" sel":"");const st=(c&&!inSel(j))?` style="background:${c}"`:"";
+      h+=`<span class="${cls}"${st} onclick="setBase(${j},event)" onmouseover="setHover(${j})">${seq[j]}</span>`;if((j+1)%10===0)h+=" ";}
+    h+=`</span></div>`;}return h;}
+function polar(cx,cy,r,deg){const a=(deg-90)*Math.PI/180;return[cx+r*Math.cos(a),cy+r*Math.sin(a)];}
+function arcPath(cx,cy,r,d0,d1){const[x0,y0]=polar(cx,cy,r,d0);const[x1,y1]=polar(cx,cy,r,d1);const large=(((d1-d0)%360+360)%360)>180?1:0;return`M ${x0.toFixed(1)} ${y0.toFixed(1)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;}
+function niceStep(L){const raw=L/10;const mag=Math.pow(10,Math.floor(Math.log10(raw||1)));const n=raw/mag;let s=n<1.5?1:n<3?2:n<7?5:10;return Math.max(1,s*mag);}
+function renderCircular(seq,p){const L=seq.length,cx=200,cy=200,R=150;let ticks="";const step=niceStep(L);
+  for(let pos=0;pos<L;pos+=step){const deg=pos/L*360;const[x1,y1]=polar(cx,cy,R,deg);const[x2,y2]=polar(cx,cy,R+7,deg);const[tx,ty]=polar(cx,cy,R+20,deg);
+    ticks+=`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#b8c4d4"/><text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="9" fill="#6b7a8d" text-anchor="middle" dominant-baseline="middle">${pos+1}</text>`;}
+  let arcs="";(p.ann||[]).forEach(a=>{const d0=a.start/L*360,d1=(a.end+1)/L*360;const[mx,my]=polar(cx,cy,R+34,(d0+d1)/2);
+    arcs+=`<path d="${arcPath(cx,cy,R,d0,d1)}" stroke="${a.color}" stroke-width="9" fill="none" stroke-linecap="round"/><text x="${mx.toFixed(1)}" y="${my.toFixed(1)}" font-size="10" fill="#1c2733" text-anchor="middle" dominant-baseline="middle">${esc(a.label)}</text>`;});
+  let selArc="";if(sel.start!==null&&sel.end!==null){selArc=`<path d="${arcPath(cx,cy,R,sel.start/L*360,(sel.end+1)/L*360)}" stroke="#f2b705" stroke-width="13" fill="none" opacity="0.6" stroke-linecap="round"/>`;}
+  else if(sel.start!==null){const[px,py]=polar(cx,cy,R,sel.start/L*360);selArc=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="5" fill="#f2b705"/>`;}
+  return `<svg id="circ" width="420" height="420" viewBox="0 0 400 400" style="max-width:100%;cursor:crosshair" onclick="circleClick(event)" onmousemove="circleHover(event)" onmouseleave="clearHover()">
+    <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#c4cedb" stroke-width="6"/>${ticks}${arcs}
+    <path id="prevArc" d="" stroke="#f2b705" stroke-width="11" fill="none" opacity="0.3" stroke-linecap="round"/>${selArc}
+    <polygon points="${cx-6},${(cy-R-12).toFixed(1)} ${cx+6},${(cy-R-12).toFixed(1)} ${cx},${(cy-R-2).toFixed(1)}" fill="#2f6fed"/>
+    <text x="${cx}" y="${cy-8}" font-size="14" fill="#1c2733" text-anchor="middle" font-weight="600">${esc(p.name)}</text>
+    <text x="${cx}" y="${cy+12}" font-size="11" fill="#6b7a8d" text-anchor="middle">${L} bp</text>
+    <text x="${cx}" y="${cy+30}" font-size="9" fill="#9aa7b5" text-anchor="middle">▲ position 1 · clockwise</text></svg>`;}
+function circleClick(e){const p=curP();if(!p)return;const L=seqOf(p).length;const svg=document.getElementById("circ");const rect=svg.getBoundingClientRect();
+  const x=(e.clientX-rect.left)/rect.width*400-200,y=(e.clientY-rect.top)/rect.height*400-200;
+  let deg=(Math.atan2(y,x)*180/Math.PI+90+360)%360;let idx=Math.round(deg/360*L)%L;if(idx<0)idx+=L;if(idx>=L)idx=L-1;setBase(idx,e);}
+function circleHover(e){const p=curP();if(!p)return;const L=seqOf(p).length;const svg=document.getElementById("circ");if(!svg)return;const rect=svg.getBoundingClientRect();
+  const x=(e.clientX-rect.left)/rect.width*400-200,y=(e.clientY-rect.top)/rect.height*400-200;
+  let deg=(Math.atan2(y,x)*180/Math.PI+90+360)%360;let idx=Math.round(deg/360*L)%L;if(idx<0)idx+=L;if(idx>=L)idx=L-1;setHover(idx);}
+
+/* selection */
+function clearSel(){sel={start:null,end:null};showMenu=false;copySub=false;hoverIdx=null;}
+function setBase(i,e){
+  hoverIdx=null;
+  if(sel.start===null||(sel.start!==null&&sel.end!==null)){sel={start:i,end:null};showMenu=false;copySub=false;showSidebar=false;showDetails=false;}
+  else{if(i>=sel.start)sel.end=i;else sel={start:i,end:sel.start};menuPos=e?{x:e.clientX,y:e.clientY}:{x:240,y:240};showMenu=true;}
+  render();
+}
+function selecting(){return sel.start!==null&&sel.end===null;}
+function setHover(i){if(!selecting())return;hoverIdx=i;paintPreview();}
+function clearHover(){hoverIdx=null;paintPreview();}
+function paintPreview(){
+  const p=curP();if(!p)return;const L=seqOf(p).length;
+  if(viewMode==="circular"&&p.type==="dna"){const el=document.getElementById("prevArc");if(!el)return;
+    if(!selecting()||hoverIdx===null){el.setAttribute("d","");return;}
+    const a=Math.min(sel.start,hoverIdx),b=Math.max(sel.start,hoverIdx);el.setAttribute("d",arcPath(200,200,150,a/L*360,(b+1)/L*360));}
+  else{const wrap=document.getElementById("seqwrap");if(!wrap)return;const spans=wrap.querySelectorAll(".b");
+    let a=-1,b=-1;if(selecting()&&hoverIdx!==null){a=Math.min(sel.start,hoverIdx);b=Math.max(sel.start,hoverIdx);}
+    spans.forEach((s,idx)=>{if(idx>=a&&idx<=b&&idx!==sel.start)s.classList.add("prev");else s.classList.remove("prev");});}
+}
+
+/* options menu (no Add; has Details) */
+function menuHTML(){
+  if(!showMenu||sel.start===null||sel.end===null)return"";
+  const p=curP();const isDNA=p.type==="dna";
+  const items=copySub?`
+    ${isDNA?`<div class="menuitem" onclick="copyRegion('dna')">Copy DNA</div>`:""}
+    <div class="menuitem" onclick="copyRegion('prot')">Copy ${isDNA?'protein':'sequence'}</div>
+    <div class="menuitem muted" onclick="copySub=false;render()">‹ Back</div>`:`
+    <div class="menuitem" onclick="optLabel()">Label…</div>
+    <div class="menuitem" onclick="optDetails()">Details</div>
+    <div class="menuitem" onclick="optCopy()">Copy…</div>
+    <div class="menuitem" onclick="optModel()">Model</div>
+    <div class="menuitem danger" onclick="optDelete()">Delete</div>
+    <div class="menuitem muted" onclick="closeMenu()">Close</div>`;
+  const x=Math.max(8,Math.min(menuPos.x,window.innerWidth-170)),y=Math.max(8,Math.min(menuPos.y,window.innerHeight-240));
+  return `<div id="optmenu" style="position:fixed;left:${x}px;top:${y}px;z-index:1000;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.16);padding:6px;min-width:150px">${items}</div>`;
+}
+function closeMenu(){showMenu=false;copySub=false;render();}
+function optDetails(){showDetails=true;showMenu=false;render();}
+function optDelete(){const p=curP();p.ann=p.ann.filter(a=>!(a.start<=sel.end&&a.end>=sel.start));showMenu=false;clearSel();save();render();}
+function optModel(){showMenu=false;render();modelProtein();}
+function optCopy(){copySub=true;render();}
+function copyRegion(kind){const p=curP();const region=seqOf(p).slice(sel.start,sel.end+1);const text=kind==="dna"?region:(p.type==="protein"?region:translate(region));
+  navigator.clipboard.writeText(text).then(()=>alert("Copied "+(kind==="dna"?"DNA":"protein")+" ("+text.length+" characters).")).catch(()=>alert("Copy failed."));
+  showMenu=false;copySub=false;render();}
+function optLabel(){sidebarRegion={start:sel.start,end:sel.end};labelDraft="";showSidebar=true;showMenu=false;render();}
+
+/* label sidebar */
+function sidebarHTML(){
+  if(!showSidebar||!sidebarRegion)return"";
+  const sw=PALETTE.map(c=>`<span class="swatch ${c===labelColor?'on':''}" style="background:${c}" onclick="pickColor('${c}')"></span>`).join("");
+  return `<div class="sidebar"><h2>Label region ${sidebarRegion.start+1}–${sidebarRegion.end+1}</h2>
+    <label>Component name</label><input id="sb-text" value="${esc(labelDraft)}" oninput="labelDraft=this.value" placeholder="e.g. promoter, ORF, His-tag">
+    <label>Color</label><div>${sw}</div>
+    <div style="margin-top:16px"><button class="primary" onclick="sidebarSave()">Save</button>
+      <button class="ghost" style="margin-left:8px" onclick="sidebarCancel()">Cancel</button></div></div>`;
+}
+function pickColor(c){labelColor=c;render();}
+function sidebarSave(){const p=curP();const t=(labelDraft||"").trim();if(!t){alert("Enter a name");return;}
+  p.ann.push({id:id(),start:sidebarRegion.start,end:sidebarRegion.end,label:t,color:labelColor});
+  showSidebar=false;labelDraft="";clearSel();save();render();}
+function sidebarCancel(){showSidebar=false;labelDraft="";render();}
+function delAnn(aid){const p=curP();p.ann=p.ann.filter(a=>a.id!==aid);save();render();}
+
+/* structure (AlphaFold) */
+async function loadStructure(){
+  const p=curP();const q=val("uni-q").trim();const status=document.getElementById("struct-status");
+  if(!q){status.textContent="Enter a UniProt ID or a protein name.";return;}
+  if(typeof $3Dmol==="undefined"){status.textContent="3D viewer library didn't load (need internet for this feature).";return;}
+  try{
+    let acc=q;const looksAcc=/^[A-Za-z0-9]{6,10}$/.test(q)&&/[0-9]/.test(q)&&!/\s/.test(q);
+    if(!looksAcc){status.textContent='Resolving "'+q+'" via UniProt…';
+      const r=await fetch(`https://rest.uniprot.org/uniprotkb/search?query=${encodeURIComponent(q)}&format=json&size=1&fields=accession`);
+      const j=await r.json();if(!j.results||!j.results.length)throw new Error('No UniProt match for "'+q+'"');acc=j.results[0].primaryAccession;}
+    status.textContent="Fetching AlphaFold model for "+acc+"…";
+    const ar=await fetch(`https://alphafold.ebi.ac.uk/api/prediction/${encodeURIComponent(acc)}`);
+    if(!ar.ok)throw new Error("AlphaFold has no model for "+acc);
+    const aj=await ar.json();if(!aj.length)throw new Error("No AlphaFold entry for "+acc);
+    const url=aj[0].pdbUrl||aj[0].cifUrl;const fmt=url.endsWith(".cif")?"cif":"pdb";
+    const data=await (await fetch(url)).text();
+    const el=document.getElementById("viewer3d");el.innerHTML="";
+    const v=$3Dmol.createViewer(el,{backgroundColor:"white"});v.addModel(data,fmt);v.setStyle({},{cartoon:{colorscheme:"spectrum"}});v.zoomTo();v.render();
+    p.uniprot=acc;save();
+    status.innerHTML='Showing AlphaFold model <b>'+acc+'</b> · <a href="https://alphafold.ebi.ac.uk/entry/'+acc+'" target="_blank">Open in AlphaFold DB ▸</a>';
+  }catch(e){status.textContent="Error: "+e.message+"  (if 'failed to fetch', serve the file via a local server instead of double-clicking).";}
+}
+function modelProtein(){
+  const p=curP();if(!p)return;
+  if(p.uniprot&&p.uniprot.trim()){loadStructure();return;}
+  const seq=seqOf(p);const region=(sel.start!==null&&sel.end!==null)?seq.slice(sel.start,sel.end+1):seq;
+  const orf=longestORF(region);if(!orf.len){alert("No ORF found to translate.");return;}
+  try{navigator.clipboard.writeText(orf.prot);}catch(e){}
+  alert("Longest ORF translated ("+orf.len+" aa) and copied. Opening NCBI BLAST to identify it; paste the UniProt ID into the Structure box for AlphaFold.");
+  window.open("https://blast.ncbi.nlm.nih.gov/Blast.cgi?PROGRAM=blastp&PAGE_TYPE=BlastSearch&QUERY="+encodeURIComponent(orf.prot),"_blank");
+}
+
+/* ===================== TOOLS (NEB-inspired calculators) ===================== */
+function viewTools(){
+  return `<div class="panel"><div class="lblrow"><h2 style="margin:0">🧪 Molecular biology tools</h2><button class="ghost" onclick="toggleTools()">‹ Back to plasmids</button></div>
+    <p class="muted" style="font-size:12px">Offline calculators inspired by NEB's tool suite. These use standard formulas (nearest-neighbor Tm; 650/330/340 g·mol⁻¹ per bp·nt) — they approximate but don't replace NEB's product-specific tools.</p>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
+      <div class="sidecard" style="flex:1 1 250px">
+        <h3 style="font-size:13px;margin:0 0 8px">Mass ↔ moles</h3>
+        <label>Nucleic acid</label><select id="t-type" onchange="tlMassMoles()"><option value="650">dsDNA</option><option value="330">ssDNA</option><option value="340">RNA</option></select>
+        <label>Length (bp / nt)</label><input id="t-len" type="number" oninput="tlMassMoles()" placeholder="1000">
+        <label>Mass (ng)</label><input id="t-ng" type="number" oninput="tlMassMoles()" placeholder="100">
+        <div id="t-mm-res" style="margin-top:10px;font-size:13px"></div>
+      </div>
+      <div class="sidecard" style="flex:1 1 250px">
+        <h3 style="font-size:13px;margin:0 0 8px">Ligation (insert : vector)</h3>
+        <label>Vector mass (ng)</label><input id="l-vng" type="number" oninput="tlLig()" placeholder="50">
+        <label>Vector length (bp)</label><input id="l-vlen" type="number" oninput="tlLig()" placeholder="5000">
+        <label>Insert length (bp)</label><input id="l-ilen" type="number" oninput="tlLig()" placeholder="1000">
+        <label>Molar ratio (insert:vector)</label><input id="l-ratio" type="number" value="3" oninput="tlLig()">
+        <div id="l-res" style="margin-top:10px;font-size:13px"></div>
+      </div>
+      <div class="sidecard" style="flex:1 1 250px">
+        <h3 style="font-size:13px;margin:0 0 8px">Dilution (C₁V₁ = C₂V₂)</h3>
+        <label>Stock conc (C₁)</label><input id="d-c1" type="number" oninput="tlDil()">
+        <label>Stock volume (V₁)</label><input id="d-v1" type="number" oninput="tlDil()">
+        <label>Final conc (C₂)</label><input id="d-c2" type="number" oninput="tlDil()">
+        <div id="d-res" style="margin-top:10px;font-size:13px"></div>
+      </div>
+      <div class="sidecard" style="flex:1 1 250px">
+        <h3 style="font-size:13px;margin:0 0 8px">Primer Tm (nearest-neighbor)</h3>
+        <label>Primer sequence</label><input id="tm-seq" oninput="tlTm()" placeholder="ACGT...">
+        <label>Primer conc (µM)</label><input id="tm-conc" type="number" value="0.25" oninput="tlTm()">
+        <label>[Na⁺] (mM)</label><input id="tm-na" type="number" value="50" oninput="tlTm()">
+        <div id="tm-res" style="margin-top:10px;font-size:13px"></div>
+      </div>
+    </div>
+    <div class="note">More NEB-style tools (Double Digest buffer finder, NEBuilder/Gibson primer design) depend on NEB's enzyme/buffer data or assembly logic — planned for a future version with a backend.</div>
+  </div>`;
+}
+function tlMassMoles(){const mw=parseFloat(val("t-type")),len=parseFloat(val("t-len")),ng=parseFloat(val("t-ng"));const r=document.getElementById("t-mm-res");if(!r)return;
+  if(!len||isNaN(ng)){r.textContent="";return;}const pmol=ng*1000/(len*mw);r.innerHTML="= <b>"+pmol.toFixed(3)+" pmol</b> &middot; "+(pmol*6.022e11).toExponential(2)+" molecules";}
+function tlLig(){const vng=parseFloat(val("l-vng")),vlen=parseFloat(val("l-vlen")),ilen=parseFloat(val("l-ilen")),ratio=parseFloat(val("l-ratio"));const r=document.getElementById("l-res");if(!r)return;
+  if(!vng||!vlen||!ilen||!ratio){r.textContent="";return;}const ing=ratio*(ilen/vlen)*vng;r.innerHTML="Use <b>"+ing.toFixed(1)+" ng</b> of insert ("+ratio+":1)";}
+function tlDil(){const c1=parseFloat(val("d-c1")),v1=parseFloat(val("d-v1")),c2=parseFloat(val("d-c2"));const r=document.getElementById("d-res");if(!r)return;
+  if(!c1||!v1||!c2){r.textContent="";return;}const v2=c1*v1/c2;r.innerHTML="Final volume <b>"+v2.toFixed(2)+"</b> &middot; add "+(v2-v1).toFixed(2)+" diluent";}
+function tlTm(){const seq=cleanDNA(val("tm-seq"));const conc=parseFloat(val("tm-conc"))||0.25,na=parseFloat(val("tm-na"))||50;const r=document.getElementById("tm-res");if(!r)return;
+  if(seq.length<2){r.textContent="";return;}r.innerHTML="NN Tm <b>"+tmNN(seq,conc*1e-6,na/1000)+" °C</b> &middot; "+seq.length+" nt &middot; GC "+((seq.match(/[GC]/g)||[]).length/seq.length*100).toFixed(0)+"%";}
+
+/* helpers */
+function copySeq(kind,btn){const p=curP();const text=kind==="dna"?seqOf(p):(p.type==="protein"?seqOf(p):longestORF(seqOf(p)).prot);
+  navigator.clipboard.writeText(text).then(()=>{const o=btn.textContent;btn.textContent="Copied!";setTimeout(()=>btn.textContent=o,1200);}).catch(()=>alert("Copy failed."));}
+function val(eid){const el=document.getElementById(eid);return el?el.value:"";}
+function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));}
+render();
+</script>
+</body>
+</html>

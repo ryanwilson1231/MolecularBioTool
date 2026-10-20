@@ -5,13 +5,13 @@
    Nothing is deleted - "Show all tools" is always one click away.
    ========================================================================= */
 
-const ALL_TOOLS = ["start","plasmids","parts","design","crispr","protein","inventory","protocols","tools","connect"];
+const ALL_TOOLS = ["start","plasmids","parts","design","primers","crispr","protein","inventory","protocols","tools","connect"];
 
 const PROFILES = [
   { id:"cloning", icon:"🧬", title:"Cloning and constructs",
     blurb:"Design a plasmid, build it, and check the clone came back right.",
     example:"Putting a gene into an expression vector",
-    tools:["start","plasmids","design","inventory","protocols","tools"] },
+    tools:["start","plasmids","design","primers","inventory","protocols","tools"] },
   { id:"crispr", icon:"✂️", title:"Genome editing",
     blurb:"Design guides, check them against your own plasmids, and plan the repair donor.",
     example:"Knocking in a tag at an endogenous locus",
@@ -19,11 +19,11 @@ const PROFILES = [
   { id:"protein", icon:"🧊", title:"Protein expression",
     blurb:"Tag it, express it, and look at the structure behind the sequence.",
     example:"A His-tagged construct for purification",
-    tools:["start","plasmids","protein","design","inventory","protocols","tools"] },
+    tools:["start","plasmids","protein","design","primers","inventory","protocols","tools"] },
   { id:"synbio", icon:"🧩", title:"Synthetic biology",
     blurb:"Keep a library of parts and compose constructs out of them.",
     example:"A four-fragment Golden Gate assembly",
-    tools:["start","plasmids","parts","design","inventory","protocols"] },
+    tools:["start","plasmids","parts","design","primers","inventory","protocols"] },
   { id:"manager", icon:"🧪", title:"Running the lab",
     blurb:"Who has what, where it lives, and what still needs making.",
     example:"Finding the tube and knowing how much is left",
@@ -214,6 +214,7 @@ const TOOL_BLURB = {
   plasmids:"maps, annotation, alignment, digests",
   parts:"a reusable library of promoters, tags and ORFs",
   design:"routes, primers and protocols for a new construct",
+  primers:"check a pasted primer, or design Gibson ones",
   crispr:"guides, oligos, donors",
   protein:"translation, properties, structure",
   inventory:"tubes, enzymes, oligos, cells",

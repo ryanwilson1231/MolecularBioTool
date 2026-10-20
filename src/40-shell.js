@@ -230,6 +230,7 @@ const NAV = [
   { id:"plasmids",  ic:"🧬", t:"Constructs" },
   { id:"parts",     ic:"🧩", t:"Parts" },
   { id:"design",    ic:"🏗️", t:"Design" },
+  { id:"primers",   ic:"🧷", t:"Primers" },
   { id:"crispr",    ic:"✂️", t:"CRISPR" },
   { id:"protein",   ic:"🧊", t:"Protein" },
   { sec:"Bench" },
@@ -292,6 +293,7 @@ function render(){
     case "inventory": html = viewInventory(); break;
     case "parts":     html = viewParts(); break;
     case "design":    html = viewDesign(); break;
+    case "primers":   html = viewPrimers(); break;
     case "start":     html = viewStart(); break;
     case "crispr":    html = viewCrispr(); break;
     case "protein":   html = viewProtein(); break;

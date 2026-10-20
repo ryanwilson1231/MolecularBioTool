@@ -189,6 +189,15 @@
   .howrev{color:var(--accent2);font-weight:700}
   .howmut{color:var(--red);font-weight:700}
 
+  /* ---------- primer anatomy ---------- */
+  .primerline{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:11px 12px;
+        font-size:12.5px;word-break:break-all;line-height:1.7;margin-top:10px}
+  .ptail{background:#ffe0b3;color:#7a4a00;border-radius:3px;padding:1px 2px;font-weight:600}
+  .panneal{background:#d6f5d6;color:#17632f;border-radius:3px;padding:1px 2px;font-weight:600}
+  .primerkey{display:flex;gap:16px;flex-wrap:wrap;margin-top:7px;font-size:11.5px;color:var(--muted)}
+  .primerkey .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;
+        vertical-align:-1px;padding:0}
+
   /* ---------- make-this routes ---------- */
   .routegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:4px}
   .routecard{border:1px solid var(--line);border-radius:10px;padding:13px;cursor:pointer;background:var(--panel2);
@@ -1408,6 +1417,223 @@ function chooseArmPair(fwdTemplate, revTemplate, needTm, fwdTail, revTail, opts)
     if(!best || penalty < best.penalty) best = { fa, ra, d, penalty };
   }));
   return best || { fa:F[0], ra:R[0], d:null, penalty:0 };
+}
+
+
+/* ==== 32-primers.js ==== */
+/* =========================================================================
+   PRIMER ANALYSIS
+   A Gibson primer is a 5' homology tail welded onto a 3' annealing region, and
+   only the annealing part has anything to do with the template you amplify from.
+   Nobody should have to trim it by hand to find out where it binds or what its
+   real Tm is, so this works that out: longest 3'-anchored match wins, the rest
+   is tail.
+
+   The second job is off-targets. A primer primes from its 3' end, so a site is
+   dangerous when the last several bases match perfectly, however bad the 5' end
+   is. Pairs of such sites facing each other are what actually produce the extra
+   band on the gel, so those are enumerated too.
+   ========================================================================= */
+
+const PRIMER_MIN_ANNEAL = 12;   // below this a "match" is chance
+const PRIMER_SEED_3P    = 10;   // 3' bases that must match exactly to seed a site
+
+/* Split a primer into 5' tail and 3' annealing region against one template. */
+function splitPrimer(primer, tmpl, circular){
+  const p = cleanDNA(primer);
+  if(p.length < PRIMER_MIN_ANNEAL) return { error:"Too short to place - " + p.length + " bases." };
+  const hay = circular ? tmpl + tmpl : tmpl;
+  for(let len = p.length; len >= PRIMER_MIN_ANNEAL; len--){
+    const suf = p.slice(-len);
+    let at = hay.indexOf(suf);
+    if(at !== -1 && at < tmpl.length)
+      return primerPlacement(p, suf, 1, at, tmpl, circular);
+    at = hay.indexOf(revComp(suf));
+    if(at !== -1 && at < tmpl.length)
+      return primerPlacement(p, suf, -1, at, tmpl, circular);
+  }
+  return { error:"No part of this primer's 3' end matches that template." };
+}
+function primerPlacement(primer, anneal, strand, at, tmpl, circular){
+  const tail = primer.slice(0, primer.length - anneal.length);
+  const start = at % tmpl.length, end = (at + anneal.length - 1) % tmpl.length;
+  return {
+    primer, anneal, tail, strand,
+    start, end,
+    threePrime: strand === 1 ? end : start,
+    annealTm: tmNN(anneal),
+    fullTm: tmNN(primer),
+    annealGc: gcPct(anneal),
+    isGibson: tail.length >= 15,
+    wraps: circular && (at + anneal.length) > tmpl.length,
+    warn: primerWarnings(primer)
+  };
+}
+/* Where else could this anneal? Seeded on the 3' end, because that is what
+   has to match for a polymerase to extend. */
+function primerSites(anneal, tmpl, circular, opts){
+  opts = opts || {};
+  const seedLen = Math.min(opts.seed || PRIMER_SEED_3P, anneal.length);
+  const maxMm = opts.maxMismatch == null ? 5 : opts.maxMismatch;
+  const L = tmpl.length;
+  const hay = circular ? tmpl + tmpl : tmpl;
+  const out = [];
+  const scan = (seedSeq, strand) => {
+    let i = hay.indexOf(seedSeq);
+    while(i !== -1){
+      if(i < L){
+        const site = scoreSite(anneal, strand, i, hay, L, seedLen, circular);
+        if(site && site.mismatches <= maxMm &&
+           !out.some(o => o.strand === site.strand && o.threePrime === site.threePrime))
+          out.push(site);
+      }
+      i = hay.indexOf(seedSeq, i + 1);
+    }
+  };
+  scan(anneal.slice(-seedLen), 1);
+  scan(revComp(anneal.slice(-seedLen)), -1);
+  out.sort((a, b) => a.mismatches - b.mismatches || b.terminal3 - a.terminal3);
+  return out;
+}
+/* `i` is where the 3' seed sits in the (possibly doubled) template.
+
+   strand +1: the primer reads like the top strand. Its 3' base sits at
+              i + seedLen - 1, and the primer runs leftwards from there.
+   strand -1: the primer is the reverse complement of a top-strand stretch, so
+              its 3' base pairs with top position i and the primer runs
+              rightwards along the top strand as you walk back from its 3' end.
+*/
+function scoreSite(anneal, strand, i, hay, L, seedLen, circular){
+  const n = anneal.length;
+  const from = strand === 1 ? (i + seedLen - n) : i;          // leftmost top-strand base covered
+  if(from < 0 || from + n > hay.length) return null;          // footprint falls off the template
+  let mismatches = 0, matched = 0, terminal3 = 0, stillRunning = true;
+  for(let k = 0; k < n; k++){                                  // k counts back from the 3' end
+    const pb = anneal[n - 1 - k];
+    const hb = strand === 1 ? hay[i + seedLen - 1 - k]
+                            : (COMP[hay[i + k]] || "N");
+    if(pb === hb){ matched++; if(stillRunning) terminal3++; }
+    else { mismatches++; stillRunning = false; }
+  }
+  const s = ((from % L) + L) % L;
+  const e = ((from + n - 1) % L + L) % L;
+  return {
+    strand, start:s, end:e,
+    threePrime: strand === 1 ? e : s,
+    mismatches, matched, terminal3,
+    identity: matched / n,
+    tm3: terminal3 >= 2 ? tmNN(anneal.slice(n - terminal3)) : null,
+    risk: siteRisk(mismatches, terminal3, n)
+  };
+}
+/* A polymerase extends from the 3' end, so a long perfectly matched 3' run is
+   dangerous however mismatched the 5' end is - that is exactly how a primer with
+   a Gibson tail works on purpose, and how a spurious band happens by accident.
+   Total mismatch count matters much less. */
+function siteRisk(mismatches, terminal3, n){
+  if(mismatches === 0) return "exact";
+  if(terminal3 >= 15 || mismatches <= 2) return "high";
+  if(terminal3 >= 10 || mismatches <= 4) return "medium";
+  return "low";
+}
+/* Every product a set of primers could make: the one you want, and the ones
+   you do not. A product needs a forward site and a reverse site facing it. */
+function predictAmplicons(sites, L, circular, maxLen){
+  maxLen = maxLen || Math.min(L, 12000);
+  const out = [];
+  const fwd = sites.filter(s => s.site.strand === 1);
+  const rev = sites.filter(s => s.site.strand === -1);
+  fwd.forEach(f => rev.forEach(r => {
+    let len = r.site.end - f.site.start + 1;
+    if(len <= 0){
+      if(!circular) return;
+      len += L;                                  // the product crosses the origin
+    }
+    if(len > maxLen || len < 30) return;
+    const worst = Math.max(f.site.mismatches, r.site.mismatches);
+    out.push({ fwd:f, rev:r, len, start:f.site.start, end:r.site.end,
+      onTarget: f.site.mismatches === 0 && r.site.mismatches === 0,
+      mismatches: f.site.mismatches + r.site.mismatches,
+      risk: worst === 0 ? "exact" : (f.site.risk === "low" || r.site.risk === "low") ? "low"
+            : (f.site.risk === "high" || r.site.risk === "high") ? "high" : "medium" });
+  }));
+  out.sort((a, b) => a.mismatches - b.mismatches || a.len - b.len);
+  // the same stretch of DNA is one product however many primers happen to bind its ends
+  const seen = new Set(), uniq = [];
+  out.forEach(a => {
+    const key = a.start + ":" + a.end;
+    if(seen.has(key)) return;
+    seen.add(key); uniq.push(a);
+  });
+  return uniq;
+}
+/* The whole job for a pasted set of primers against one template. */
+function analysePrimers(list, tmplPlasmid, opts){
+  opts = opts || {};
+  const tmpl = seqOf(tmplPlasmid);
+  const circular = tmplPlasmid.topology === "circular";
+  const polyId = opts.polymerase || defaultPolymerase();
+  const rows = list.map(item => {
+    const placed = splitPrimer(item.seq, tmpl, circular);
+    if(placed.error) return { name:item.name, seq:cleanDNA(item.seq), error:placed.error };
+    const sites = primerSites(placed.anneal, tmpl, circular, opts);
+    const off = sites.filter(s => !(s.strand === placed.strand && s.threePrime === placed.threePrime));
+    return { name:item.name, seq:placed.primer, placed, sites, off,
+             tailSource: placed.tail ? whereDoesTailMatch(placed.tail, tmplPlasmid) : null };
+  });
+  const good = rows.filter(r => !r.error);
+  const allSites = [];
+  good.forEach(r => r.sites.forEach(s => allSites.push({ primer:r, site:s })));
+  const amplicons = predictAmplicons(allSites, tmpl.length, circular, opts.maxAmplicon);
+  let ta = null;
+  if(good.length){
+    const tms = good.map(r => r.placed.annealTm).filter(x => x != null);
+    if(tms.length){
+      const lo = Math.min.apply(null, tms);
+      const lenOfLo = good.find(r => r.placed.annealTm === lo).placed.anneal.length;
+      ta = annealTempFor(polyId, lo, lenOfLo);
+    }
+  }
+  return { rows, amplicons, ta, polymerase:polyId, template:tmplPlasmid };
+}
+/* A Gibson tail is homology to whatever sits next to it in the finished
+   construct. Saying where it came from turns a blob of bases into a fact. */
+function whereDoesTailMatch(tail, exclude){
+  const t = cleanDNA(tail);
+  if(t.length < 12) return null;
+  for(const p of state.plasmids){
+    if(p.type !== "dna") continue;
+    const s = seqOf(p);
+    const hay = p.topology === "circular" ? s + s : s;
+    let at = hay.indexOf(t);
+    let strand = 1;
+    if(at === -1){ at = hay.indexOf(revComp(t)); strand = -1; }
+    if(at !== -1 && at < s.length)
+      return { plasmid:p, at: at % s.length, strand, same: exclude && p.id === exclude.id };
+  }
+  return null;
+}
+/* Parse a pasted block: "name,SEQ" / "name<tab>SEQ" / ">name\nSEQ" / bare sequences. */
+function parsePrimerPaste(text){
+  const out = [];
+  const lines = String(text || "").split(/\r?\n/);
+  let pendingName = null;
+  lines.forEach(raw => {
+    const line = raw.trim();
+    if(!line) return;
+    if(line.startsWith(">")){ pendingName = line.slice(1).trim(); return; }
+    const m = line.match(/^(.*?)[,;\t]\s*([ACGTNacgtn\s]+)$/);
+    if(m && cleanDNA(m[2]).length >= PRIMER_MIN_ANNEAL){
+      out.push({ name:m[1].trim() || ("primer " + (out.length + 1)), seq:cleanDNA(m[2]) });
+      pendingName = null; return;
+    }
+    const seq = cleanDNA(line);
+    if(seq.length >= PRIMER_MIN_ANNEAL){
+      out.push({ name: pendingName || ("primer " + (out.length + 1)), seq });
+      pendingName = null;
+    }
+  });
+  return out;
 }
 
 
@@ -2786,6 +3012,7 @@ const NAV = [
   { id:"plasmids",  ic:"🧬", t:"Constructs" },
   { id:"parts",     ic:"🧩", t:"Parts" },
   { id:"design",    ic:"🏗️", t:"Design" },
+  { id:"primers",   ic:"🧷", t:"Primers" },
   { id:"crispr",    ic:"✂️", t:"CRISPR" },
   { id:"protein",   ic:"🧊", t:"Protein" },
   { sec:"Bench" },
@@ -2848,6 +3075,7 @@ function render(){
     case "inventory": html = viewInventory(); break;
     case "parts":     html = viewParts(); break;
     case "design":    html = viewDesign(); break;
+    case "primers":   html = viewPrimers(); break;
     case "start":     html = viewStart(); break;
     case "crispr":    html = viewCrispr(); break;
     case "protein":   html = viewProtein(); break;
@@ -2918,13 +3146,13 @@ function fastaOf(p){ return ">" + p.name.replace(/\s+/g,"_") + " " + seqOf(p).le
    Nothing is deleted - "Show all tools" is always one click away.
    ========================================================================= */
 
-const ALL_TOOLS = ["start","plasmids","parts","design","crispr","protein","inventory","protocols","tools","connect"];
+const ALL_TOOLS = ["start","plasmids","parts","design","primers","crispr","protein","inventory","protocols","tools","connect"];
 
 const PROFILES = [
   { id:"cloning", icon:"🧬", title:"Cloning and constructs",
     blurb:"Design a plasmid, build it, and check the clone came back right.",
     example:"Putting a gene into an expression vector",
-    tools:["start","plasmids","design","inventory","protocols","tools"] },
+    tools:["start","plasmids","design","primers","inventory","protocols","tools"] },
   { id:"crispr", icon:"✂️", title:"Genome editing",
     blurb:"Design guides, check them against your own plasmids, and plan the repair donor.",
     example:"Knocking in a tag at an endogenous locus",
@@ -2932,11 +3160,11 @@ const PROFILES = [
   { id:"protein", icon:"🧊", title:"Protein expression",
     blurb:"Tag it, express it, and look at the structure behind the sequence.",
     example:"A His-tagged construct for purification",
-    tools:["start","plasmids","protein","design","inventory","protocols","tools"] },
+    tools:["start","plasmids","protein","design","primers","inventory","protocols","tools"] },
   { id:"synbio", icon:"🧩", title:"Synthetic biology",
     blurb:"Keep a library of parts and compose constructs out of them.",
     example:"A four-fragment Golden Gate assembly",
-    tools:["start","plasmids","parts","design","inventory","protocols"] },
+    tools:["start","plasmids","parts","design","primers","inventory","protocols"] },
   { id:"manager", icon:"🧪", title:"Running the lab",
     blurb:"Who has what, where it lives, and what still needs making.",
     example:"Finding the tube and knowing how much is left",
@@ -3127,6 +3355,7 @@ const TOOL_BLURB = {
   plasmids:"maps, annotation, alignment, digests",
   parts:"a reusable library of promoters, tags and ORFs",
   design:"routes, primers and protocols for a new construct",
+  primers:"check a pasted primer, or design Gibson ones",
   crispr:"guides, oligos, donors",
   protein:"translation, properties, structure",
   inventory:"tubes, enzymes, oligos, cells",
@@ -6472,6 +6701,266 @@ function tlTE(){
       : "low — check the cells, the ligation buffer's ATP, and the heat shock timing") + "</span>";
 }
 
+
+
+/* ==== 82-primers-view.js ==== */
+/* ===================== VIEW: primers ===================== */
+let primerState = { mode:"analyse", templateId:null, paste:"", result:null, error:null,
+                    fromId:null, fromStart:"", fromEnd:"", intoId:null, intoAt:"", arm:25, design:null };
+
+function viewPrimers(){
+  const dna = state.plasmids.filter(x => x.type === "dna");
+  return `<h1 class="page">Primers</h1>
+  <p class="lede">Paste a primer and it finds its own annealing region &mdash; no trimming the tail off by hand
+  to work out where it binds.</p>
+  <div class="toggle" style="margin-bottom:14px">
+    <button class="${primerState.mode==="analyse"?"on":""}" onclick="primerState.mode='analyse';render()">Check primers</button>
+    <button class="${primerState.mode==="design"?"on":""}" onclick="primerState.mode='design';render()">Design Gibson primers</button>
+  </div>
+  ${primerState.mode === "analyse" ? primerAnalyseView(dna) : primerDesignView(dna)}`;
+}
+
+/* ---------------- check ---------------- */
+function primerAnalyseView(dna){
+  const t = state.plasmids.find(x => x.id === primerState.templateId);
+  return `<div class="panel">
+    <div class="grid2">
+      <div>
+        <label>Template they amplify from</label>
+        <select onchange="primerState.templateId=this.value;primerState.result=null;render()">
+          <option value="">— choose —</option>
+          ${dna.map(x => `<option value="${x.id}" ${primerState.templateId===x.id?"selected":""}>${esc(x.name)} (${bp(seqOf(x).length)})</option>`).join("")}
+        </select>
+        <div class="muted small" style="margin-top:6px">For a Gibson primer this is the thing you PCR,
+          not the finished construct. The tail will not match it &mdash; that is the point.</div>
+      </div>
+      <div>
+        <label>Primers</label>
+        <textarea rows="5" placeholder="Paste one per line. &#10;Names optional: myPrimer, ACGT...&#10;FASTA works too."
+          oninput="primerState.paste=this.value;primerState.result=null">${esc(primerState.paste)}</textarea>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <button class="primary" onclick="runPrimerCheck()">Check them</button>
+      <span class="muted small" style="margin-left:10px">Finds the annealing region, its Tm, and everywhere else it could bind.</span>
+    </div>
+    ${primerState.error ? `<div class="note warn" style="margin-top:12px">${esc(primerState.error)}</div>` : ""}
+  </div>
+  ${primerState.result ? primerResults(primerState.result) : ""}`;
+}
+function runPrimerCheck(){
+  primerState.result = null; primerState.error = null;
+  const t = state.plasmids.find(x => x.id === primerState.templateId);
+  if(!t){ primerState.error = "Choose the template these primers amplify from."; render(); return; }
+  const list = parsePrimerPaste(primerState.paste);
+  if(!list.length){ primerState.error = "No primers found in that. One sequence per line."; render(); return; }
+  primerState.result = analysePrimers(list, t, { polymerase: defaultPolymerase() });
+  render();
+}
+function primerResults(res){
+  const t = res.template, L = seqOf(t).length;
+  const riskPill = r => r === "exact" ? '<span class="pill red">exact</span>'
+    : r === "high" ? '<span class="pill red">high</span>'
+    : r === "medium" ? '<span class="pill amber">medium</span>' : '<span class="pill grey">low</span>';
+
+  const rows = res.rows.map((r, i) => {
+    if(r.error) return `<div class="panel"><div class="lblrow"><h3 style="margin:0">${esc(r.name)}</h3>
+      <span class="pill red">not placed</span></div>
+      <div class="mono small" style="word-break:break-all;margin-top:6px">${r.seq}</div>
+      <div class="note warn" style="margin-top:8px">${esc(r.error)}</div></div>`;
+    const p = r.placed;
+    const ts = r.tailSource;
+    return `<div class="panel">
+      <div class="lblrow">
+        <h3 style="margin:0">${esc(r.name)}
+          <span class="muted small">${p.strand === 1 ? "forward" : "reverse"} ·
+            ${p.start + 1}–${p.end + 1}${p.wraps ? " (crosses the origin)" : ""}</span></h3>
+        ${p.isGibson ? '<span class="pill blue">Gibson</span>' : '<span class="pill grey">plain primer</span>'}
+      </div>
+      <div class="primerline mono">${p.tail ? `<span class="ptail">${p.tail}</span>` : ""}<span class="panneal">${p.anneal}</span></div>
+      <div class="primerkey">
+        ${p.tail ? `<span><i class="sw ptail"></i>tail, ${p.tail.length} nt${
+          ts ? " — homologous to " + esc(ts.plasmid.name) + " at " + (ts.at + 1) : " — matches nothing you have"}</span>` : ""}
+        <span><i class="sw panneal"></i>anneals, ${p.anneal.length} nt</span>
+      </div>
+      <div style="margin-top:10px">
+        <span class="stat">Annealing Tm <b>${p.annealTm} °C</b></span>
+        <span class="stat">Whole primer <b>${p.fullTm} °C</b></span>
+        <span class="stat">GC of anneal <b>${Math.round(p.annealGc)}%</b></span>
+        <span class="stat">Length <b>${r.seq.length} nt</b></span>
+      </div>
+      <div class="muted small" style="margin-top:4px">The annealing Tm is the one that sets your annealing
+        temperature. The whole-primer figure only applies once the tail is incorporated, from cycle 3 onward.</div>
+      ${p.warn.length ? `<div class="note" style="margin-top:8px">⚠ ${p.warn.map(esc).join("; ")}</div>` : ""}
+      ${r.off.length ? `<details class="fold" open><summary>Other places it could bind
+          <span class="muted small">${r.off.length}</span></summary>
+        <div class="scrollx"><table>
+          <thead><tr><th>Position</th><th>Strand</th><th>Mismatches</th><th>3' run</th><th>Identity</th><th>Risk</th></tr></thead>
+          <tbody>${r.off.slice(0, 12).map(s => `<tr>
+            <td class="num">${s.start + 1}–${s.end + 1}</td>
+            <td>${s.strand === 1 ? "+" : "−"}</td>
+            <td class="num">${s.mismatches}</td>
+            <td class="num">${s.terminal3} nt${s.tm3 ? " · " + s.tm3 + " °C" : ""}</td>
+            <td class="num">${Math.round(s.identity * 100)}%</td>
+            <td>${riskPill(s.risk)}</td></tr>`).join("")}
+          </tbody></table></div>
+        <div class="muted small" style="margin-top:6px">A primer extends from its 3' end, so the
+          <b>3' run</b> column matters more than the mismatch count — a long perfect run will prime even with a
+          badly mismatched 5' end.</div>
+      </details>`
+        : `<div class="note ok" style="margin-top:10px">Binds in one place only.</div>`}
+    </div>`;
+  }).join("");
+
+  const amp = res.amplicons;
+  return `${rows}
+  ${amp.length ? `<div class="panel">
+    <h2>Products these primers would make</h2>
+    <div class="scrollx"><table>
+      <thead><tr><th>Size</th><th>Span</th><th>From</th><th>Mismatches</th><th>Risk</th></tr></thead>
+      <tbody>${amp.slice(0, 10).map((a, i) => `<tr${i === 0 ? ' style="background:var(--accent-soft)"' : ""}>
+        <td><b>${bp(a.len)}</b>${i === 0 ? ' <span class="pill green">expected</span>' : ""}</td>
+        <td class="num">${a.start + 1}–${a.end + 1}</td>
+        <td class="muted small">${esc(a.fwd.primer.name)} + ${esc(a.rev.primer.name)}</td>
+        <td class="num">${a.mismatches}</td>
+        <td>${riskPill(a.risk)}</td></tr>`).join("")}
+      </tbody></table></div>
+    ${amp.length > 1 ? `<div class="note" style="margin-top:10px">More than one product is possible on this
+      template. The extra bands are usually weak, but if a gel comes back messy this is the first thing to check.</div>`
+      : `<div class="note ok" style="margin-top:10px">One product only.</div>`}
+    ${res.ta ? `<div class="note info" style="margin-top:10px">Run at <b>${res.ta} °C</b> with
+      ${esc(polymerase(res.polymerase).label)}, set by the lowest annealing Tm in the set.</div>` : ""}
+  </div>` : ""}`;
+}
+
+/* ---------------- design ---------------- */
+function primerDesignView(dna){
+  const from = state.plasmids.find(x => x.id === primerState.fromId);
+  const into = state.plasmids.find(x => x.id === primerState.intoId);
+  const fromLen = from ? seqOf(from).length : 0;
+  return `<div class="panel">
+    <div class="grid2">
+      <div>
+        <label>Amplify from</label>
+        <select onchange="primerState.fromId=this.value;primerState.design=null;render()">
+          <option value="">— choose —</option>
+          ${dna.map(x => `<option value="${x.id}" ${primerState.fromId===x.id?"selected":""}>${esc(x.name)}</option>`).join("")}
+        </select>
+        ${from ? `<div class="row" style="margin-top:8px">
+          <div><label class="plain">From base</label>
+            <input type="number" min="1" max="${fromLen}" value="${esc(primerState.fromStart)}"
+              oninput="primerState.fromStart=this.value;primerState.design=null"></div>
+          <div><label class="plain">To base</label>
+            <input type="number" min="1" max="${fromLen}" value="${esc(primerState.fromEnd)}"
+              oninput="primerState.fromEnd=this.value;primerState.design=null"></div>
+        </div>
+        ${(from.ann || []).length ? `<div style="margin-top:6px">
+          <select onchange="primerUseAnn(this.value)">
+            <option value="">— or pick a labelled region —</option>
+            ${from.ann.map((a,i) => `<option value="${i}">${esc(a.label)} (${a.start+1}–${a.end+1})</option>`).join("")}
+          </select></div>` : ""}` : ""}
+      </div>
+      <div>
+        <label>Insert into</label>
+        <select onchange="primerState.intoId=this.value;primerState.design=null;render()">
+          <option value="">— choose —</option>
+          ${dna.filter(x => x.topology === "circular").map(x => `<option value="${x.id}" ${primerState.intoId===x.id?"selected":""}>${esc(x.name)}</option>`).join("")}
+        </select>
+        ${into ? `<div class="row" style="margin-top:8px">
+          <div><label class="plain">At base</label>
+            <input type="number" min="1" max="${seqOf(into).length}" value="${esc(primerState.intoAt)}"
+              oninput="primerState.intoAt=this.value;primerState.design=null"></div>
+          <div><label class="plain">Homology arm</label>
+            <input type="number" min="15" max="40" value="${primerState.arm}"
+              oninput="primerState.arm=parseInt(this.value)||25;primerState.design=null"></div>
+        </div>
+        ${(into.ann || []).length ? `<div style="margin-top:6px">
+          <select onchange="primerState.intoAt=String(parseInt(this.value,10)+1);primerState.design=null;render()">
+            <option value="">— or at the start of a labelled region —</option>
+            ${into.ann.map(a => `<option value="${a.start}">${esc(a.label)} (${a.start+1})</option>`).join("")}
+          </select></div>` : ""}` : ""}
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <button class="primary" onclick="runPrimerDesign()">Design the four primers</button>
+      <span class="muted small" style="margin-left:10px">Two to open the vector, two to amplify the insert with arms.</span>
+    </div>
+    ${primerState.error ? `<div class="note warn" style="margin-top:12px">${esc(primerState.error)}</div>` : ""}
+  </div>
+  ${primerState.design ? primerDesignResults() : ""}`;
+}
+function primerUseAnn(i){
+  const from = state.plasmids.find(x => x.id === primerState.fromId);
+  const a = from && from.ann[parseInt(i, 10)];
+  if(!a) return;
+  primerState.fromStart = String(a.start + 1); primerState.fromEnd = String(a.end + 1);
+  primerState.design = null; render();
+}
+function runPrimerDesign(){
+  primerState.design = null; primerState.error = null;
+  const from = state.plasmids.find(x => x.id === primerState.fromId);
+  const into = state.plasmids.find(x => x.id === primerState.intoId);
+  if(!from || !into){ primerState.error = "Choose what to amplify and what to put it into."; render(); return; }
+  const fs = seqOf(from), is = seqOf(into);
+  const a = parseInt(primerState.fromStart, 10) - 1, b = parseInt(primerState.fromEnd, 10) - 1;
+  const at = parseInt(primerState.intoAt, 10) - 1;
+  if(isNaN(a) || isNaN(b) || a < 0 || b >= fs.length || b <= a){
+    primerState.error = "Give a valid region to amplify."; render(); return; }
+  if(isNaN(at) || at < 0 || at >= is.length){
+    primerState.error = "Give a valid position in the vector."; render(); return; }
+  const insert = fs.slice(a, b + 1);
+  const gap = { pStart:at, pLen:0, tStart:at, tLen:insert.length, pSeq:"", tSeq:insert };
+  const target = { id:"tmp", name:into.name + "+insert", type:"dna", topology:"circular",
+                   seq: is.slice(0, at) + insert + is.slice(at), ann:[], stock:[] };
+  const plan = planReplacement(into, target, gap, { polymerase: defaultPolymerase(),
+                                                    targetTa: (state.lab && state.lab.targetTa) || 60 });
+  if(!plan){ primerState.error = "Could not find annealing regions around that position."; render(); return; }
+  primerState.design = { plan, into, from, insert, at, product: target.seq };
+  render();
+}
+function primerDesignResults(){
+  const d = primerState.design, q = d.plan;
+  const rows = [
+    ["vector-F", q.bbF, "opens the vector, pointing away from the insertion point"],
+    ["vector-R", q.bbR, "the other half of the opening"],
+    ["insert-F", q.insF, "amplifies the insert, carrying vector homology"],
+    ["insert-R", q.insR, "the same at the other end"]
+  ].filter(r => r[1]);
+  return `<div class="panel">
+    <div class="lblrow"><h2 style="margin:0">${esc(d.from.name)} → ${esc(d.into.name)} at ${d.at + 1}</h2>
+      <span class="muted small">${bp(d.insert.length)} insert · ${bp(d.product.length)} product</span></div>
+    <div class="scrollx"><table>
+      <thead><tr><th>Primer</th><th>Sequence (5'→3')</th><th>Len</th><th>Anneal Tm</th><th>Stock</th><th></th></tr></thead>
+      <tbody>${rows.map(([n, pr, why]) => `<tr>
+        <td><b>${esc(n)}</b><div class="muted small">${esc(why)}</div></td>
+        <td class="mono" style="word-break:break-all;max-width:330px">${pr.tail ? `<span class="ptail">${pr.tail}</span>` : ""}<span class="panneal">${pr.anneal}</span></td>
+        <td class="num">${pr.len}</td><td class="num">${pr.tm} °C</td>
+        <td>${pr.reuse ? `<span class="pill green">have it: ${esc(pr.reuse.name)}</span>`
+              : `<button class="ghost" onclick="addOligo(${jsq(pr.full)},${jsq(n)})">log as ordered</button>`}</td>
+        <td><button class="ghost" onclick="copyText('${pr.full}','Primer')">copy</button></td></tr>`).join("")}
+      </tbody></table></div>
+    <div class="primerkey" style="margin-top:8px">
+      <span><i class="sw ptail"></i>${q.arm} bp homology arm</span>
+      <span><i class="sw panneal"></i>anneals to the template</span>
+    </div>
+    <div class="note info" style="margin-top:10px">Anneal at <b>${q.ta} °C</b>. DpnI-treat both products before
+      assembling, or the parent vector will dominate the transformation.</div>
+    <div style="margin-top:12px">
+      <button class="ghost" onclick="checkDesignedPrimers()">Check these for off-targets →</button>
+      <button class="ghost" style="margin-left:8px" onclick="copyText(${jsq(rows.map(r => r[0] + "," + r[1].full).join("\\n"))},'All four primers')">Copy all four</button>
+    </div>
+  </div>`;
+}
+/* hand the designed primers straight to the checker, against the vector */
+function checkDesignedPrimers(){
+  const d = primerState.design; if(!d) return;
+  const q = d.plan;
+  primerState.paste = [["vector-F", q.bbF], ["vector-R", q.bbR]]
+    .map(([n, pr]) => n + "," + pr.full).join("\n");
+  primerState.templateId = d.into.id;
+  primerState.mode = "analyse";
+  runPrimerCheck();
+}
 
 
 /* ==== 85-connect.js ==== */

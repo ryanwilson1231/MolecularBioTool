@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 const here = dirname(fileURLToPath(import.meta.url));
 const src = join(here, "..", "src");
 const mods = readdirSync(src).filter(f => /^\d+-.*\.js$/.test(f)).sort();
-const tests = ["core.test.js","geometry.test.js","backbone.test.js","planner.test.js","profile.test.js","ux.test.js","mutate.test.js","make.test.js"];
+const tests = ["core.test.js","geometry.test.js","backbone.test.js","planner.test.js","profile.test.js","ux.test.js","mutate.test.js","make.test.js","primers.test.js"];
 const bundle = [readFileSync(join(here,"stubs.js"),"utf8")]
   .concat(mods.map(f => readFileSync(join(src,f),"utf8")))
   .concat(tests.map(f => readFileSync(join(here,f),"utf8")))

@@ -40,6 +40,7 @@ Modules are concatenated in filename order, so the number prefix is the load ord
 | `10-state.js` | storage, migration, shelf helpers, the profile |
 | `20-enzymes.js` | enzyme table, feature libraries, annotation, alignment |
 | `30-cloning.js` | primer design, enzyme-pair search, restriction products |
+| `32-primers.js` | splits a primer into tail and anneal, off-target sites, products |
 | `35-planner.js` | assembly, Golden Gate overhangs, route costing, protocols |
 | `37-mutagenesis.js` | point mutation: codon choice, back-to-back primers, KLD |
 | `39-makeplan.js` | diffs a target against what you own and picks a route to it |
@@ -56,6 +57,7 @@ Modules are concatenated in filename order, so the number prefix is the load ord
 | `75-parts.js` | part library and the Design planner |
 | `77-mutate-view.js` | the point-mutation screen |
 | `80-tools.js` | calculators and planning rates |
+| `82-primers-view.js` | the Primers screen |
 | `85-connect.js` | opt-in matching |
 | `99-init.js` | first render |
 
@@ -68,7 +70,7 @@ single-file output.
 node test/run.mjs
 ```
 
-449 assertions, no dependencies. They run the real modules against a stubbed DOM and
+507 assertions, no dependencies. They run the real modules against a stubbed DOM and
 check the biology rather than the rendering — enzyme overhangs and compatibility,
 alignment against mutated, reverse-strand and origin-spanning reads, guide and PAM
 geometry, that Golden Gate overhangs actually reassemble into the intended product,
@@ -125,6 +127,30 @@ product cannot be blunt-ligated and KLD will fail.
 Primer pairs are also checked for 3′ complementarity and the arm lengths adjusted to break a
 dimer where the sequence allows it. Where it does not — a direct repeat in the template — the
 pair is reported honestly rather than silently shipped.
+
+## Primers
+
+**Primers → Check primers** takes pasted primers and works out their own anatomy. A Gibson
+primer is a 5′ homology tail welded to a 3′ annealing region, and only the annealing part has
+anything to do with the template you amplify from — so it finds the longest 3′-anchored match
+and calls everything 5′ of that the tail. No trimming by hand to find out where a primer binds
+or what its real Tm is.
+
+It reports the **annealing Tm** separately from the whole-primer Tm, because only the first one
+sets your annealing temperature; the tail does not participate until cycle 3. It also traces the
+tail back to whichever construct it is homologous to, which turns a blob of bases into a fact.
+
+Then it looks for **everywhere else the primer could bind**. A polymerase extends from the 3′
+end, so sites are seeded on the 3′-terminal 10 bases and scored on the length of the perfectly
+matched 3′ run rather than on total mismatches — a long perfect 3′ anchor primes even with a
+badly mismatched 5′ end, which is both how a Gibson tail works on purpose and how a spurious
+band happens by accident. Pairs of sites facing each other are enumerated as **predicted
+products**, so a duplicated region shows up as two bands before you run the gel.
+
+Paste format is forgiving: bare sequences, `name,SEQ`, tab-separated, or FASTA.
+
+**Primers → Design Gibson primers** is the fast path for the common job: amplify this region,
+put it there, get the four primers with homology arms. One click hands them to the checker.
 
 ## Make this
 

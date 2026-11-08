@@ -238,7 +238,8 @@ const NAV = [
   { id:"protocols", ic:"📋", t:"Protocols" },
   { id:"tools",     ic:"🧮", t:"Tools" },
   { sec:"People" },
-  { id:"connect",   ic:"🔗", t:"Connect" }
+  { id:"connect",   ic:"🔗", t:"Connect" },
+  { id:"live",      ic:"📡", t:"Live room" }
 ];
 function go(v){ state.view = v; if(v !== "plasmids") { showMenu = false; } save(); render(); window.scrollTo(0,0); }
 function curP(){ return state.plasmids.find(p => p.id === state.curPlasmid) || null; }
@@ -300,6 +301,7 @@ function render(){
     case "protocols": html = viewProtocols(); break;
     case "tools":     html = viewTools(); break;
     case "connect":   html = viewConnect(); break;
+    case "live":      html = viewLive(); break;
     default:          html = viewGallery();
   }
   m.innerHTML = html;

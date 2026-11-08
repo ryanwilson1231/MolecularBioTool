@@ -39,6 +39,9 @@ function viewConnect(){
         <input value="${esc(c.name)}" oninput="state.connect.name=this.value;save()"></div>
       <div><label class="plain">Group / institution</label>
         <input value="${esc(c.org)}" oninput="state.connect.org=this.value;save()"></div>
+      <div><label class="plain">Department &mdash; matches people down the corridor</label>
+        <input value="${esc(c.dept || '')}" placeholder="Molecular and Cell Biology"
+          oninput="state.connect.dept=this.value;save()"></div>
       <div><label class="plain">Contact — shown only after both sides accept</label>
         <input value="${esc(c.contact)}" oninput="state.connect.contact=this.value;save()"></div>
       <div><label class="plain">What you would want to hear about</label>

@@ -5,7 +5,7 @@
    Nothing is deleted - "Show all tools" is always one click away.
    ========================================================================= */
 
-const ALL_TOOLS = ["start","plasmids","parts","design","primers","crispr","protein","inventory","protocols","tools","connect"];
+const ALL_TOOLS = ["start","plasmids","parts","design","primers","crispr","protein","inventory","protocols","tools","connect","live"];
 
 const PROFILES = [
   { id:"cloning", icon:"🧬", title:"Cloning and constructs",
@@ -220,5 +220,6 @@ const TOOL_BLURB = {
   inventory:"tubes, enzymes, oligos, cells",
   protocols:"the standard bench protocols, scaled",
   tools:"Tm, ligation, dilution and other calculators",
-  connect:"opt-in matching with other labs"
+  connect:"opt-in matching with other labs",
+  live:"a live room with other labs, right now"
 };

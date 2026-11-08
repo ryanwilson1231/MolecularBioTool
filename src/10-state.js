@@ -42,6 +42,7 @@ function normalize(s){
   s.runs = s.runs || {};          // protocolId -> {checked:[], started, note}
   s.builds = s.builds || [];      // saved cloning plans
   s.connect = s.connect || { enabled:false, name:"", org:"", contact:"", topics:"", shareMode:"features", optIn:{} };
+  if(s.connect.dept === undefined) s.connect.dept = "";   // same-corridor matching
   /* --- what is on the shelf, beyond the plasmids themselves --- */
   s.reagents = s.reagents || {};
   s.reagents.enzymes = s.reagents.enzymes || {};   // name -> {units, loc, exp, note}

@@ -291,4 +291,81 @@ console.log("\n== a tag next to an ORF rides in the primer, it does not get synt
   const g2 = assemblePieces(lonely, "gibson", { arm:25 });
   ok("a short part with no core to ride on is ordered", g2.orders.length === 1, JSON.stringify(g2.units.map(x=>x.label+":"+x.mode)));
 }
+
+/* ---------------------------------------------------------------------------
+   Every primer a route hands you has to be a thing you can actually order.
+   sliceCyc(a, a) means "all the way round the plasmid", which is right for a
+   unit's own span and wrong for an empty lead/trail: a core with no riders
+   either side used to get the entire product welded into its tail, producing
+   ~1.8 kb "primers" on the Gibson and Golden Gate routes. The older assertion
+   above missed it because an over-long primer also raises an ultramer warning,
+   and it accepted either. This one accepts no excuses.
+   --------------------------------------------------------------------------- */
+console.log("\n== primers are orderable on every route ==");
+{
+  const MAX_OLIGO = 100;        // beyond this no vendor sells it as a plain oligo
+  const vecSeq = seqOf(state.plasmids[0]);
+  const orf = "ATGGTGAGCAAGGGCGAGGAGCTGTTCACCGGGGTGGTGCCCATCCTGGTCGAGCTGGACGGCGACGTAAACGGCCACAAGTTCAGCGTGTCCGGCGAGGGCGAGGGCGATGCCACCTACGGCAAGCTGACCCTGAAGTTCATCTGCACCACCGGCAAGCTGCCCGTGCCCTGGCCCACCCTCGTGACCACCCTGACCTACGGCGTGCAGTGCTTCAGCCGCTACCCCGACCACATGAAGCAGCACGACTTCTTCAAGTCCGCCATGCCCGAAGGCTACTAA";
+
+  // a donor that physically contains the ORF, so PCR is a genuine option
+  const donor = { id:"t_donor", name:"donor", type:"dna", topology:"circular",
+    seq: vecSeq.slice(0,200) + orf + vecSeq.slice(200), ann:[], tags:[], note:"",
+    stock:[{ id:"ts", ug:3, conc:100, loc:"x", date:"2026-01-01" }], created:Date.now() };
+  state.plasmids.push(donor);
+
+  // THE case the old test never covered: one core piece, no riders either side
+  const single = [{ partId:null, name:"ORF", kind:"orf", seq:orf, sourceId:"t_donor" }];
+  const routes = planRoutes(state.plasmids[0], single, null);
+  ok("a single-insert job produces routes", routes.length > 0, routes.length + " routes");
+
+  let worst = 0, worstWhere = "";
+  routes.forEach(r => {
+    (r.plan.primers || []).forEach(x => ["f","r"].forEach(k => {
+      if(x[k].full.length > worst){ worst = x[k].full.length; worstWhere = r.key + " " + x[k].name; }
+    }));
+  });
+  ok("no route emits a primer longer than " + MAX_OLIGO + " nt", worst <= MAX_OLIGO,
+     "longest " + worst + " nt (" + worstWhere + ")");
+
+  routes.forEach(r => {
+    (r.plan.primers || []).forEach(x => ["f","r"].forEach(k => {
+      const pr = x[k];
+      ok(r.key + ": " + k + " primer is tail+anneal and nothing else",
+         pr.full === pr.tail + pr.anneal,
+         pr.full.length + " vs " + pr.tail.length + "+" + pr.anneal.length);
+      ok(r.key + ": " + k + " tail stays under 40 nt", pr.tail.length <= 40, pr.tail.length + " nt");
+      ok(r.key + ": " + k + " primer is clean DNA", /^[ACGT]+$/.test(pr.full));
+      ok(r.key + ": " + k + " anneal is 15-40 nt", pr.anneal.length >= 15 && pr.anneal.length <= 40,
+         pr.anneal.length + " nt");
+      ok(r.key + ": " + k + " Tm is in the usable band", pr.tm >= 50 && pr.tm <= 72, pr.tm + " C");
+    }));
+  });
+
+  // the Gibson arms must be real homology to the neighbour, not filler
+  const gib = routes.find(r => r.key === "gibson");
+  if(gib && gib.plan.primers.length){
+    const pr = gib.plan.primers[0];
+    ok("gibson: the forward arm is homology to the product",
+       gib.plan.product.indexOf(pr.f.tail) !== -1, pr.f.tail);
+    ok("gibson: the reverse arm is homology to the product",
+       gib.plan.product.indexOf(revComp(pr.r.tail)) !== -1, pr.r.tail);
+    ok("gibson: the forward anneal is the insert's 5' end", orf.startsWith(pr.f.anneal), pr.f.anneal);
+    ok("gibson: the reverse anneal is the insert's 3' end", orf.endsWith(revComp(pr.r.anneal)), pr.r.anneal);
+  }
+
+  // and an empty lead/trail really is empty, checked at the source
+  const pieces = [
+    { name:"backbone", kind:"backbone", seq: vecSeq, source:{ how:"digest" } },
+    { name:"ORF", kind:"orf", seq: orf, source:{ how:"pcr", label:"PCR from donor" } }
+  ];
+  const g = assemblePieces(pieces, "gibson", { arm:25 });
+  const core = g.units.find(u => !u.isBackbone);
+  ok("a core with no riders has no lead or trail", core.lead.length === 0 && core.trail.length === 0,
+     "lead " + core.lead.length + ", trail " + core.trail.length);
+  ok("so its tails are exactly one 25 bp arm", g.primers[0].f.tail.length === 25 && g.primers[0].r.tail.length === 25,
+     g.primers[0].f.tail.length + " / " + g.primers[0].r.tail.length);
+
+  state.plasmids.pop();
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed\n");

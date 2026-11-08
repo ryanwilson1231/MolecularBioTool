@@ -69,7 +69,10 @@ function normalize(s){
     p.type = p.type || "dna";
     p.topology = p.topology || "circular";
     p.ann = p.ann || [];
-    p.ann.forEach(a => { a.kind = a.kind || "custom"; a.strand = a.strand || 1; });
+    p.ann.forEach(a => { a.kind = a.kind || "custom"; a.strand = a.strand || 1;
+      // a label is a string or it is nothing; an imported file with a missing one
+      // used to take the whole map down with it
+      if(typeof a.label !== "string") a.label = a.label == null ? "" : String(a.label); });
     p.uniprot = p.uniprot || "";
     p.stock = p.stock || [];
     p.tags = p.tags || [];
@@ -98,6 +101,8 @@ function findMatchingOligo(seq){
     return os.length >= 15 && (os.slice(-18) === tail || os === s);
   }) || null;
 }
+/* An annotation label as a string, whatever is actually stored on it. */
+function annLabel(a){ return a && typeof a.label === "string" ? a.label : (a && a.label != null ? String(a.label) : ""); }
 function money(n){ const c = (state.rates && state.rates.currency) || "$";
   return c + (n >= 100 ? Math.round(n) : Math.round(n*100)/100); }
 

@@ -186,10 +186,10 @@ function viewStart(){
     <div class="panel">
       <h2>Where things stand</h2>
       <div class="statrow">
-        <div><b>${dna.length}</b><span>constructs</span></div>
+        <div><b>${dna.length}</b><span>${plural(dna.length, "construct")}</span></div>
         <div><b>${ug.toFixed(1)}</b><span>µg logged</span></div>
         <div><b>${dna.filter(x => !x.stock.length).length}</b><span>not made yet</span></div>
-        <div><b>${tracksEnzymes() ? ownedEnzymes().length : "—"}</b><span>enzymes on shelf</span></div>
+        <div><b>${tracksEnzymes() ? ownedEnzymes().length : "—"}</b><span>${plural(tracksEnzymes() ? ownedEnzymes().length : 0, "enzyme")} on shelf</span></div>
       </div>
       <div class="note info" style="margin-top:12px">Everything is stored in this browser.
         Use <b>Export</b> in the header before you rely on it &mdash; clearing site data wipes the workspace.</div>

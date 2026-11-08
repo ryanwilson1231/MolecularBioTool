@@ -179,7 +179,7 @@ function jaccardFromSketch(a, b){
 }
 function featureTags(p){
   const t = new Set();
-  (p.ann || []).forEach(a => t.add(a.label.replace(/\s*\(.*?\)\s*/g,"").trim()));
+  (p.ann || []).forEach(a => t.add(annLabel(a).replace(/\s*\(.*?\)\s*/g,"").trim()));
   p.tags.forEach(x => t.add(x));
   return [...t].filter(Boolean);
 }
@@ -333,8 +333,19 @@ function download(name, text, mime){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
-function fmtTime(sec){ sec = Math.round(sec); const m = Math.floor(sec/60), s = sec%60; return m ? m+"m "+s+"s" : s+"s"; }
+/* Bench convention: "45 s", "1 min 30 s", "2 min" - the same spacing every
+   other line of a protocol uses, so a cycling step reads consistently. */
+function fmtTime(sec){
+  sec = Math.round(sec);
+  const m = Math.floor(sec/60), s = sec%60;
+  if(!m) return s + " s";
+  return s ? m + " min " + s + " s" : m + " min";
+}
 function bp(n){ return n >= 1000 ? (n/1000).toFixed(n >= 10000 ? 1 : 2) + " kb" : n + " bp"; }
+/* "1 construct", "2 constructs" - a count of one on the Start screen is the
+   first thing a new user sees, so it should not read "1 constructs". */
+function plural(n, word, pluralForm){ return n === 1 ? word : (pluralForm || word + "s"); }
+
 function exportWorkspace(){
   download("betterbench-" + today() + ".json", JSON.stringify(state, null, 2), "application/json");
   toast("Workspace exported");

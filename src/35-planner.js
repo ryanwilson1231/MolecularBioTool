@@ -178,8 +178,12 @@ function assemblePieces(pieces, method, opts){
     // only the core has a template to anneal to; the riders live in the tails
     const core = u.coreIdx !== undefined ? spans[u.coreIdx] : { start:u.start, end:u.end };
     const coreSeq = sliceCyc(core.start, core.end);
-    const lead  = sliceCyc(u.start, core.start);   // riders 5' of the core
-    const trail = sliceCyc(core.end, u.end);       // riders 3' of the core
+    // sliceCyc(a, a) means "all the way round", which is right for a unit's own
+    // span but wrong here: with no riders there is nothing to carry, and asking
+    // for an empty slice used to return the entire product and weld it onto the
+    // primer tail. Only ask for a lead/trail when riders actually exist.
+    const lead  = u.lead.length  ? sliceCyc(u.start, core.start) : "";   // riders 5' of the core
+    const trail = u.trail.length ? sliceCyc(core.end, u.end)     : "";   // riders 3' of the core
     const fA = pickAnneal(coreSeq, 62), rA = pickAnneal(revComp(coreSeq), 62);
     let fTail, rTail;
     if(method === "goldengate"){

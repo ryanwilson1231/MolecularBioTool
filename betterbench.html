@@ -447,7 +447,10 @@ function normalize(s){
     p.type = p.type || "dna";
     p.topology = p.topology || "circular";
     p.ann = p.ann || [];
-    p.ann.forEach(a => { a.kind = a.kind || "custom"; a.strand = a.strand || 1; });
+    p.ann.forEach(a => { a.kind = a.kind || "custom"; a.strand = a.strand || 1;
+      // a label is a string or it is nothing; an imported file with a missing one
+      // used to take the whole map down with it
+      if(typeof a.label !== "string") a.label = a.label == null ? "" : String(a.label); });
     p.uniprot = p.uniprot || "";
     p.stock = p.stock || [];
     p.tags = p.tags || [];
@@ -476,6 +479,8 @@ function findMatchingOligo(seq){
     return os.length >= 15 && (os.slice(-18) === tail || os === s);
   }) || null;
 }
+/* An annotation label as a string, whatever is actually stored on it. */
+function annLabel(a){ return a && typeof a.label === "string" ? a.label : (a && a.label != null ? String(a.label) : ""); }
 function money(n){ const c = (state.rates && state.rates.currency) || "$";
   return c + (n >= 100 ? Math.round(n) : Math.round(n*100)/100); }
 
@@ -1818,8 +1823,12 @@ function assemblePieces(pieces, method, opts){
     // only the core has a template to anneal to; the riders live in the tails
     const core = u.coreIdx !== undefined ? spans[u.coreIdx] : { start:u.start, end:u.end };
     const coreSeq = sliceCyc(core.start, core.end);
-    const lead  = sliceCyc(u.start, core.start);   // riders 5' of the core
-    const trail = sliceCyc(core.end, u.end);       // riders 3' of the core
+    // sliceCyc(a, a) means "all the way round", which is right for a unit's own
+    // span but wrong here: with no riders there is nothing to carry, and asking
+    // for an empty slice used to return the entire product and weld it onto the
+    // primer tail. Only ask for a lead/trail when riders actually exist.
+    const lead  = u.lead.length  ? sliceCyc(u.start, core.start) : "";   // riders 5' of the core
+    const trail = u.trail.length ? sliceCyc(core.end, u.end)     : "";   // riders 3' of the core
     const fA = pickAnneal(coreSeq, 62), rA = pickAnneal(revComp(coreSeq), 62);
     let fTail, rTail;
     if(method === "goldengate"){
@@ -2961,7 +2970,7 @@ function jaccardFromSketch(a, b){
 }
 function featureTags(p){
   const t = new Set();
-  (p.ann || []).forEach(a => t.add(a.label.replace(/\s*\(.*?\)\s*/g,"").trim()));
+  (p.ann || []).forEach(a => t.add(annLabel(a).replace(/\s*\(.*?\)\s*/g,"").trim()));
   p.tags.forEach(x => t.add(x));
   return [...t].filter(Boolean);
 }
@@ -3115,8 +3124,19 @@ function download(name, text, mime){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
-function fmtTime(sec){ sec = Math.round(sec); const m = Math.floor(sec/60), s = sec%60; return m ? m+"m "+s+"s" : s+"s"; }
+/* Bench convention: "45 s", "1 min 30 s", "2 min" - the same spacing every
+   other line of a protocol uses, so a cycling step reads consistently. */
+function fmtTime(sec){
+  sec = Math.round(sec);
+  const m = Math.floor(sec/60), s = sec%60;
+  if(!m) return s + " s";
+  return s ? m + " min " + s + " s" : m + " min";
+}
 function bp(n){ return n >= 1000 ? (n/1000).toFixed(n >= 10000 ? 1 : 2) + " kb" : n + " bp"; }
+/* "1 construct", "2 constructs" - a count of one on the Start screen is the
+   first thing a new user sees, so it should not read "1 constructs". */
+function plural(n, word, pluralForm){ return n === 1 ? word : (pluralForm || word + "s"); }
+
 function exportWorkspace(){
   download("betterbench-" + today() + ".json", JSON.stringify(state, null, 2), "application/json");
   toast("Workspace exported");
@@ -3327,10 +3347,10 @@ function viewStart(){
     <div class="panel">
       <h2>Where things stand</h2>
       <div class="statrow">
-        <div><b>${dna.length}</b><span>constructs</span></div>
+        <div><b>${dna.length}</b><span>${plural(dna.length, "construct")}</span></div>
         <div><b>${ug.toFixed(1)}</b><span>µg logged</span></div>
         <div><b>${dna.filter(x => !x.stock.length).length}</b><span>not made yet</span></div>
-        <div><b>${tracksEnzymes() ? ownedEnzymes().length : "—"}</b><span>enzymes on shelf</span></div>
+        <div><b>${tracksEnzymes() ? ownedEnzymes().length : "—"}</b><span>${plural(tracksEnzymes() ? ownedEnzymes().length : 0, "enzyme")} on shelf</span></div>
       </div>
       <div class="note info" style="margin-top:12px">Everything is stored in this browser.
         Use <b>Export</b> in the header before you rely on it &mdash; clearing site data wipes the workspace.</div>
@@ -4251,7 +4271,7 @@ function renderCircular(seq, p){
       const [ax,ay] = polar(cx,cy,R+ring-3,mid);
       labels += `<line x1="${lx.toFixed(1)}" y1="${ly.toFixed(1)}" x2="${ax.toFixed(1)}" y2="${ay.toFixed(1)}" stroke="#cbd5e1"/>
         <text x="${mx.toFixed(1)}" y="${my.toFixed(1)}" font-size="9.5" fill="#37475b" text-anchor="${mid>180?'end':'start'}"
-          dominant-baseline="middle">${esc(a.label.length > 22 ? a.label.slice(0,21)+"…" : a.label)}</text>`;
+          dominant-baseline="middle">${esc(annLabel(a).length > 22 ? annLabel(a).slice(0,21)+"…" : annLabel(a))}</text>`;
     }
   });
   let selArc = "";

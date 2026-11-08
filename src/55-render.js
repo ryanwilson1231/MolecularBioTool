@@ -62,7 +62,7 @@ function renderCircular(seq, p){
       const [ax,ay] = polar(cx,cy,R+ring-3,mid);
       labels += `<line x1="${lx.toFixed(1)}" y1="${ly.toFixed(1)}" x2="${ax.toFixed(1)}" y2="${ay.toFixed(1)}" stroke="#cbd5e1"/>
         <text x="${mx.toFixed(1)}" y="${my.toFixed(1)}" font-size="9.5" fill="#37475b" text-anchor="${mid>180?'end':'start'}"
-          dominant-baseline="middle">${esc(a.label.length > 22 ? a.label.slice(0,21)+"…" : a.label)}</text>`;
+          dominant-baseline="middle">${esc(annLabel(a).length > 22 ? annLabel(a).slice(0,21)+"…" : annLabel(a))}</text>`;
     }
   });
   let selArc = "";

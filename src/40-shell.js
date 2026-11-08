@@ -237,6 +237,7 @@ const NAV = [
   { id:"inventory", ic:"🧪", t:"Inventory" },
   { id:"protocols", ic:"📋", t:"Protocols" },
   { id:"tools",     ic:"🧮", t:"Tools" },
+  { id:"manual",    ic:"📖", t:"Manual" },
   { sec:"People" },
   { id:"connect",   ic:"🔗", t:"Connect" }
 ];
@@ -299,13 +300,15 @@ function render(){
     case "protein":   html = viewProtein(); break;
     case "protocols": html = viewProtocols(); break;
     case "tools":     html = viewTools(); break;
+    case "manual":    html = viewManual(); break;
     case "connect":   html = viewConnect(); break;
     default:          html = viewGallery();
   }
   m.innerHTML = html;
   document.getElementById("overlays").innerHTML =
     menuHTML() + sidebarHTML() + identifiedModal(curP()) + autoAnnotateModal()
-    + colorPickerOverlay() + stockFormOverlay() + shelfMergeOverlay() + makeOverlay();
+    + colorPickerOverlay() + stockFormOverlay() + shelfMergeOverlay() + makeOverlay()
+    + tourOverlay();
 }
 /* keep the caret in a filter box that re-renders on every keystroke */
 function refocus(id){

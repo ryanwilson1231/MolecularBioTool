@@ -236,6 +236,7 @@ const NAV = [
   { sec:"Bench" },
   { id:"inventory", ic:"🧪", t:"Inventory" },
   { id:"protocols", ic:"📋", t:"Protocols" },
+  { id:"exchange",  ic:"🔁", t:"Exchange" },
   { id:"tools",     ic:"🧮", t:"Tools" },
   { sec:"People" },
   { id:"connect",   ic:"🔗", t:"Connect" }
@@ -298,6 +299,7 @@ function render(){
     case "crispr":    html = viewCrispr(); break;
     case "protein":   html = viewProtein(); break;
     case "protocols": html = viewProtocols(); break;
+    case "exchange":  html = viewExchange(); break;
     case "tools":     html = viewTools(); break;
     case "connect":   html = viewConnect(); break;
     default:          html = viewGallery();

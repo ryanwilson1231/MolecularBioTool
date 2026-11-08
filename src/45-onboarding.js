@@ -5,13 +5,13 @@
    Nothing is deleted - "Show all tools" is always one click away.
    ========================================================================= */
 
-const ALL_TOOLS = ["start","plasmids","parts","design","primers","crispr","protein","inventory","protocols","tools","connect"];
+const ALL_TOOLS = ["start","plasmids","parts","design","primers","crispr","protein","inventory","protocols","exchange","tools","connect"];
 
 const PROFILES = [
   { id:"cloning", icon:"🧬", title:"Cloning and constructs",
     blurb:"Design a plasmid, build it, and check the clone came back right.",
     example:"Putting a gene into an expression vector",
-    tools:["start","plasmids","design","primers","inventory","protocols","tools"] },
+    tools:["start","plasmids","design","primers","inventory","protocols","exchange","tools"] },
   { id:"crispr", icon:"✂️", title:"Genome editing",
     blurb:"Design guides, check them against your own plasmids, and plan the repair donor.",
     example:"Knocking in a tag at an endogenous locus",
@@ -27,7 +27,7 @@ const PROFILES = [
   { id:"manager", icon:"🧪", title:"Running the lab",
     blurb:"Who has what, where it lives, and what still needs making.",
     example:"Finding the tube and knowing how much is left",
-    tools:["start","inventory","plasmids","protocols","tools"] },
+    tools:["start","inventory","plasmids","protocols","exchange","tools"] },
   { id:"everything", icon:"✳️", title:"Show me everything",
     blurb:"Every tool, no filtering. You can narrow it down later.",
     example:"You already know your way around",
@@ -219,6 +219,7 @@ const TOOL_BLURB = {
   protein:"translation, properties, structure",
   inventory:"tubes, enzymes, oligos, cells",
   protocols:"the standard bench protocols, scaled",
+  exchange:"swap protocols with other labs, as files",
   tools:"Tm, ligation, dilution and other calculators",
   connect:"opt-in matching with other labs"
 };
